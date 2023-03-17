@@ -1,18 +1,18 @@
 {
   "files": {
-    "main.css": "/static/css/main.e680be8b.css",
-    "main.js": "/static/js/main.b0e521c8.js",
-    "static/js/787.2dd3b953.chunk.js": "/static/js/787.2dd3b953.chunk.js",
-    "static/media/slap.png": "/static/media/slap.79966f731dfdae71b4d3.png",
-    "static/media/slapsound.mp4": "/static/media/slapsound.f21a2d542fa247c32ccb.mp4",
-    "static/media/logo.svg": "/static/media/logo.6ce24c58023cc2f8fd88fe9d219db6c6.svg",
-    "index.html": "/index.html",
-    "main.e680be8b.css.map": "/static/css/main.e680be8b.css.map",
-    "main.b0e521c8.js.map": "/static/js/main.b0e521c8.js.map",
-    "787.2dd3b953.chunk.js.map": "/static/js/787.2dd3b953.chunk.js.map"
+    "main.css": "/ComeMinToy-Game/static/css/main.e680be8b.css",
+    "main.js": "/ComeMinToy-Game/static/js/main.a8ff7792.js",
+    "static/js/787.2dd3b953.chunk.js": "/ComeMinToy-Game/static/js/787.2dd3b953.chunk.js",
+    "static/media/slap.png": "/ComeMinToy-Game/static/media/slap.79966f731dfdae71b4d3.png",
+    "static/media/slapsound.mp4": "/ComeMinToy-Game/static/media/slapsound.f21a2d542fa247c32ccb.mp4",
+    "static/media/logo.svg": "/ComeMinToy-Game/static/media/logo.6ce24c58023cc2f8fd88fe9d219db6c6.svg",
+    "index.html": "/ComeMinToy-Game/index.html",
+    "main.e680be8b.css.map": "/ComeMinToy-Game/static/css/main.e680be8b.css.map",
+    "main.a8ff7792.js.map": "/ComeMinToy-Game/static/js/main.a8ff7792.js.map",
+    "787.2dd3b953.chunk.js.map": "/ComeMinToy-Game/static/js/787.2dd3b953.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.e680be8b.css",
-    "static/js/main.b0e521c8.js"
+    "static/js/main.a8ff7792.js"
   ]
 }
