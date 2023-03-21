@@ -1,4 +1,4 @@
-#Hong Kong SlapJack (冚棉胎)
+#Hong Kong SlapJack
 
 Demo: https://kysolucas.github.io/ComeMinToy-Game/
 
