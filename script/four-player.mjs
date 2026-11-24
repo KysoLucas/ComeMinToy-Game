@@ -38,6 +38,8 @@ try {
 
   const bob = await open(browser, running.port, `/?room=${code}`);
   await bob.page.screenshot({ path: path.join(shots, "slapjack-lobby-invite.png") });
+  await waitFor(alice.page, "Waiting");
+  await alice.page.screenshot({ path: path.join(shots, "slapjack-waiting.png") });
   const body = await text(bob.page);
   if (body.includes("Create room")) throw new Error("invite skipped the name step");
   await fill(bob.page, "Your name", "Bob");
@@ -71,7 +73,9 @@ try {
   await dan.context.close();
   await waitFor(alice.page, "Offline");
   await alice.page.screenshot({ path: path.join(shots, "slapjack-four-offline.png") });
-  await waitFor(alice.page, "Alice · 12 cards", 12000);
+  await waitFor(alice.page, "Deal in");
+  await alice.page.screenshot({ path: path.join(shots, "slapjack-timer.png") });
+  await waitFor(alice.page, "Your cards 12", 12000);
   const after = await seatBox(alice.page, "North Cara");
   if (Math.abs(before.y - after.y) > 3 || Math.abs(before.x - after.x) > 3) {
     throw new Error(`the north seat moved ${JSON.stringify({ before, after })}`);

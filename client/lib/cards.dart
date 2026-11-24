@@ -46,6 +46,7 @@ class CoveredFan extends StatelessWidget {
     this.active = false,
     this.size = 96,
     this.label,
+    this.framed = true,
   });
 
   final int count;
@@ -54,6 +55,7 @@ class CoveredFan extends StatelessWidget {
   final bool active;
   final double size;
   final String? label;
+  final bool framed;
 
   static const _countStyle = TextStyle(
     color: Color(0xFFF7F1E3),
@@ -66,6 +68,31 @@ class CoveredFan extends StatelessWidget {
     final shown = count == 0 ? 0 : math.min(count, 5);
     final cardW = size * 0.5;
     final cardH = size * 0.68;
+    final fan = shown == 0
+        ? Center(child: Text('$count', style: _countStyle))
+        : Stack(
+            alignment: Alignment.center,
+            children: [
+              for (var i = 0; i < shown; i++)
+                Transform.translate(
+                  offset: Offset((i - (shown - 1) / 2) * (size * 0.06), 0),
+                  child: CardBack(width: cardW, height: cardH),
+                ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xE606261C),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  child: Text('$count', style: _countStyle),
+                ),
+              ),
+            ],
+          );
     return Semantics(
       button: true,
       enabled: canPlay,
@@ -78,45 +105,20 @@ class CoveredFan extends StatelessWidget {
           child: SizedBox(
             height: size,
             width: size,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: active
-                      ? const Color(0xFFF0C14A)
-                      : const Color(0xFF8FB4E0),
-                  width: 3,
-                ),
-              ),
-              child: shown == 0
-                  ? Center(child: Text('$count', style: _countStyle))
-                  : Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        for (var i = 0; i < shown; i++)
-                          Transform.translate(
-                            offset: Offset(
-                              (i - (shown - 1) / 2) * (size * 0.06),
-                              0,
-                            ),
-                            child: CardBack(width: cardW, height: cardH),
-                          ),
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: const Color(0xE606261C),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 4,
-                            ),
-                            child: Text('$count', style: _countStyle),
-                          ),
-                        ),
-                      ],
+            child: framed
+                ? DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: active
+                            ? const Color(0xFFF0C14A)
+                            : const Color(0xFF8FB4E0),
+                        width: 3,
+                      ),
                     ),
-            ),
+                    child: fan,
+                  )
+                : fan,
           ),
         ),
       ),

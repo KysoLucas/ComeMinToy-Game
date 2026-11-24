@@ -112,6 +112,11 @@ export function start({ port = 0, host = "0.0.0.0", webRoot = defaultWebRoot } =
       finish(ack, result, { ok: true, playerId: result.playerId, code: result.code });
     });
 
+    socket.on("room:hold", (payload, ack) => {
+      const result = book.holdSeat(socket.id, readBody(payload));
+      finish(ack, result, { ok: true, playerId: result.playerId, code: result.code });
+    });
+
     socket.on("room:leave", (_payload, ack) => {
       const result = book.leave(socket.id);
       finish(ack, result, { ok: true });

@@ -44,7 +44,8 @@ class GameScreen extends StatelessWidget {
         listenable: session,
         builder: (context, _) {
           final view = session.view;
-          final page = view == null
+          final naming = view != null && view.mine?.waiting == true;
+          final page = view == null || naming
               ? HomeForm(session: session)
               : view.phase == 'lobby'
               ? WaitingRoom(session: session)
@@ -96,6 +97,26 @@ class GameScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              if (session.entering)
+                const ColoredBox(
+                  color: Color(0xFF0D3B2E),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFFF0C14A)),
+                        SizedBox(height: 16),
+                        Text(
+                          'Entering room',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               if (session.confirmLeave)
                 ColoredBox(
                   color: const Color(0xCC000000),

@@ -46,6 +46,21 @@ test("the desk stops opening rooms", () => {
   assert.equal(refused, "Too many rooms");
 });
 
+test("a nameless visitor holds a seat the others can see", () => {
+  const book = createRoomBook({ schedule() {}, clear() {} });
+  const host = book.createRoom("s0", "Ada");
+  const held = book.holdSeat("s1", { code: host.code });
+  assert.equal(held.ok, true);
+  const waiting = book.snapshots(host.code)[0].view;
+  assert.equal(waiting.players[1].waiting, true);
+  assert.equal(waiting.players[1].name, "Waiting");
+  assert.equal(book.joinRoom("s1", { code: host.code, name: "Bea" }).ok, true);
+  const named = book.snapshots(host.code)[0].view;
+  assert.equal(named.players.length, 2);
+  assert.equal(named.players[1].name, "Bea");
+  assert.equal(named.players[1].waiting, false);
+});
+
 test("a blank name cannot open or join a room", () => {
   const book = createRoomBook({ schedule() {}, clear() {} });
   assert.equal(book.createRoom("s0", "   ").error, "Need a name");

@@ -8,7 +8,7 @@ import 'package:slapjack/session.dart';
 
 const _gold = Color(0xFFF0C14A);
 const _edge = Color(0xFF8FB4E0);
-const _stack = 72.0;
+const _oppStack = 64.0;
 
 class HomeForm extends StatefulWidget {
   const HomeForm({super.key, required this.session});
@@ -144,7 +144,8 @@ class _WaitingRoomState extends State<WaitingRoom> {
     final view = widget.session.view;
     if (view == null) return const SizedBox.shrink();
     final link = roomLink(view.code);
-    final canStart = view.host && view.players.length >= 2;
+    final named = view.players.where((seat) => !seat.waiting).length;
+    final canStart = view.host && named >= 2;
     return Align(
       alignment: Alignment.topCenter,
       child: SingleChildScrollView(
@@ -165,7 +166,13 @@ class _WaitingRoomState extends State<WaitingRoom> {
               ),
               const SizedBox(height: 12),
               for (final seat in view.players) ...[
-                PlayerChip(name: seat.host ? '${seat.name} · host' : seat.name),
+                PlayerChip(
+                  name: seat.waiting
+                      ? 'Waiting'
+                      : seat.host
+                      ? '${seat.name} · host'
+                      : seat.name,
+                ),
                 const SizedBox(height: 8),
               ],
               const SizedBox(height: 8),
@@ -507,6 +514,7 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
         ),
         if (deal != null) _flight(deal),
         if (gather != null) _scoop(gather),
+        _saidNear(view),
         Align(
           alignment: const Alignment(0, -0.52),
           child: _BumpToast(message: toast),
@@ -539,99 +547,132 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
   ) {
     final seat = places[place];
     final wide = place == 'West' || place == 'East';
+    final active = view.phase == 'play' && view.turn == seat?.seat;
     final body = seat == null
-        ? const SizedBox(width: _stack, height: _stack)
-        : _SeatStack(
-            seat: seat,
-            place: place,
-            count: _shownCount(seat, deal, gather),
-            active: view.phase == 'play' && view.turn == seat.seat,
-            remain: widget.session.remainMs,
-            said: view.saidBy == seat.seat ? view.said : null,
-            stackKey: _seatKey(seat.seat),
+        ? const SizedBox(width: _oppStack, height: _oppStack)
+        : Opacity(
+            opacity: active ? 1 : 0.38,
+            child: _SeatStack(
+              seat: seat,
+              place: place,
+              count: _shownCount(seat, deal, gather),
+              active: active,
+              remain: widget.session.remainMs,
+              stackKey: _seatKey(seat.seat),
+            ),
           );
-    if (!wide) return SizedBox(height: 168, child: Center(child: body));
-    return SizedBox(width: 136, child: Center(child: body));
+    if (!wide) return SizedBox(height: 108, child: Center(child: body));
+    return SizedBox(width: 124, child: Center(child: body));
+  }
+
+  Widget _saidNear(RoomView view) {
+    final said = view.said;
+    final by = view.saidBy;
+    final center = _center(_boardKey);
+    if (said == null || by == null || center == null) {
+      return const SizedBox.shrink();
+    }
+    final place = _places(view).entries
+        .where((entry) => entry.value?.seat == by)
+        .map((entry) => entry.key)
+        .firstWhere((_) => true, orElse: () => 'South');
+    return _AnchoredSpeech(center: center, place: place, text: said);
   }
 
   Widget _south(RoomView view, _Deal? deal, _Gather? gather) {
     final mine = view.mine;
     final count = mine == null ? 0 : _shownCount(mine, deal, gather);
     final yourTurn = view.phase == 'play' && view.turn == view.you;
-    return SizedBox(
-      height: 196,
-      child: Column(
-        children: [
-          _Speech(text: view.saidBy == view.you ? view.said : null),
-          Semantics(
-            label: 'South ${mine?.name ?? ''}',
-            container: true,
-            child: SizedBox(
-              height: 18,
-              child: Text(
-                mine == null ? ' ' : '${mine.name} · $count cards',
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(
-            height: 20,
-            child: Text(
-              _status(view),
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          SizedBox(
-            height: 16,
-            child: Text(
-              mine == null || mine.connected
-                  ? (yourTurn && widget.session.remainMs != null
-                        ? '${(widget.session.remainMs! / 1000).ceil()}s'
-                        : ' ')
-                  : 'Offline',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: mine != null && !mine.connected
-                    ? const Color(0xFFFFB4A8)
-                    : _gold,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+    final remain = widget.session.remainMs;
+    final seconds = remain == null ? null : (remain / 1000).ceil();
+    return Column(
+      children: [
+        SizedBox(
+          height: 64,
+          child: Row(
             children: [
-              Opacity(
-                opacity: yourTurn ? 1 : 0.55,
-                child: KeyedSubtree(
-                  key: _seatKey(view.you),
-                  child: CoveredFan(
-                    count: count,
-                    canPlay: yourTurn,
-                    active: yourTurn,
-                    size: _stack,
-                    onPlay: widget.session.playCard,
+              if (mine != null)
+                Semantics(
+                  label: 'South ${mine.name}',
+                  container: true,
+                  child: _PersonBadge(
+                    name: mine.name,
+                    offline: !mine.connected,
+                    compact: true,
                   ),
                 ),
+              Expanded(
+                child: view.phase == 'play' && seconds != null
+                    ? Semantics(
+                        label: 'Deal in $seconds',
+                        container: true,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '$seconds',
+                              style: const TextStyle(
+                                fontSize: 40,
+                                fontWeight: FontWeight.w800,
+                                color: _gold,
+                                height: 1,
+                              ),
+                            ),
+                            const Text(
+                              'auto deal',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: _gold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Text(
+                        _status(view),
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                      ),
               ),
-              const SizedBox(width: 12),
-              _SlapButton(
-                enabled: view.phase != 'won',
-                hot: view.phase == 'slap',
-                onPressed: view.phase == 'won' ? null : widget.session.slap,
-              ),
+              const SizedBox(width: 56),
             ],
           ),
-        ],
-      ),
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final side = ((constraints.maxWidth - 8) / 2).clamp(72.0, 210.0);
+            return Row(
+              children: [
+                Opacity(
+                  opacity: yourTurn ? 1 : 0.55,
+                  child: _CornerButton(
+                    size: side,
+                    title: 'Deal',
+                    child: KeyedSubtree(
+                      key: _seatKey(view.you),
+                      child: CoveredFan(
+                        count: count,
+                        canPlay: yourTurn,
+                        active: yourTurn,
+                        size: side,
+                        onPlay: widget.session.playCard,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _SlapButton(
+                  size: side,
+                  enabled: view.phase != 'won',
+                  hot: view.phase == 'slap',
+                  onPressed: view.phase == 'won' ? null : widget.session.slap,
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -804,7 +845,6 @@ class _SeatStack extends StatelessWidget {
     required this.count,
     required this.active,
     required this.remain,
-    required this.said,
     required this.stackKey,
   });
 
@@ -813,7 +853,6 @@ class _SeatStack extends StatelessWidget {
   final int count;
   final bool active;
   final int? remain;
-  final String? said;
   final Key stackKey;
 
   @override
@@ -823,113 +862,283 @@ class _SeatStack extends StatelessWidget {
       child: CoveredFan(
         count: count,
         canPlay: false,
-        active: active,
-        size: _stack,
+        active: false,
+        framed: false,
+        size: _oppStack,
         label: 'Stack $count',
         onPlay: () {},
       ),
     );
-    final caption = SizedBox(
-      width: place == 'North' ? 168 : 136,
-      height: 34,
-      child: Column(
-        children: [
-          Semantics(
-            label: '$place ${seat.name}',
-            container: true,
-            child: Text(
-              '${seat.name} · $count cards',
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            ),
-          ),
-          SizedBox(
-            height: 16,
-            child: Text(
-              seat.connected
-                  ? (active && remain != null
-                        ? '${(remain! / 1000).ceil()}s'
-                        : ' ')
-                  : 'Offline',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: seat.connected ? _gold : const Color(0xFFFFB4A8),
+    final badge = _PersonBadge(
+      name: seat.name,
+      place: place,
+      offline: !seat.connected,
+      seconds: active && remain != null ? (remain! / 1000).ceil() : null,
+    );
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: place == 'East' ? [stack, badge] : [badge, stack],
+    );
+    return row;
+  }
+}
+
+class _PersonBadge extends StatelessWidget {
+  const _PersonBadge({
+    required this.name,
+    this.place,
+    this.offline = false,
+    this.seconds,
+    this.compact = false,
+  });
+
+  final String name;
+  final String? place;
+  final bool offline;
+  final int? seconds;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = place == null ? name : '$place $name';
+    return Semantics(
+      label: label,
+      container: true,
+      child: SizedBox(
+        width: 52,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: compact ? 32 : 36,
+              height: compact ? 32 : 36,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: _edge, width: 2),
+              ),
+              child: Icon(
+                Icons.person,
+                size: compact ? 18 : 22,
+                color: offline ? const Color(0xFFFFB4A8) : _gold,
               ),
             ),
-          ),
-        ],
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+            if (!compact)
+              SizedBox(
+                height: 18,
+                child: Text(
+                  offline
+                      ? 'Offline'
+                      : seconds == null
+                      ? ' '
+                      : '$seconds',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: offline ? const Color(0xFFFFB4A8) : _gold,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
-    );
-    final bubble = _Speech(text: said);
-    final side = place == 'West' || place == 'East';
-    if (side) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: place == 'West' ? [stack, bubble] : [bubble, stack],
-          ),
-          caption,
-        ],
-      );
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [stack, caption, bubble],
     );
   }
 }
 
-class _Speech extends StatelessWidget {
-  const _Speech({required this.text});
+class _CornerButton extends StatelessWidget {
+  const _CornerButton({
+    required this.size,
+    required this.title,
+    required this.child,
+  });
 
-  final String? text;
+  final double size;
+  final String title;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 64,
-      height: 52,
-      child: Center(
-        child: text == null
-            ? const SizedBox.shrink()
-            : DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F1E3),
-                  borderRadius: BorderRadius.circular(18),
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          child,
+          Positioned(
+            left: 8,
+            top: 6,
+            child: ExcludeSemantics(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFF7F1E3),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 2,
-                  ),
-                  child: Text(
-                    text!,
-                    style: const TextStyle(
-                      color: Color(0xFF1A1A1A),
-                      fontSize: 32,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnchoredSpeech extends StatelessWidget {
+  const _AnchoredSpeech({
+    required this.center,
+    required this.place,
+    required this.text,
+  });
+
+  final Offset center;
+  final String place;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    const bodyW = 56.0;
+    const bodyH = 44.0;
+    const tail = 8.0;
+    const gap = 2.0;
+    final towardCard = switch (place) {
+      'North' => 'down',
+      'West' => 'right',
+      'East' => 'left',
+      _ => 'up',
+    };
+    final horizontal = towardCard == 'left' || towardCard == 'right';
+    final width = horizontal ? bodyW + tail : bodyW;
+    final height = horizontal ? bodyH : bodyH + tail;
+    final double left;
+    final double top;
+    if (place == 'North') {
+      left = center.dx - width / 2;
+      top = center.dy - 77 - gap - height;
+    } else if (place == 'South') {
+      left = center.dx - width / 2;
+      top = center.dy + 77 + gap;
+    } else if (place == 'West') {
+      left = center.dx - 55 - gap - width;
+      top = center.dy - height / 2;
+    } else {
+      left = center.dx + 55 + gap;
+      top = center.dy - height / 2;
+    }
+    final bubble = DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F1E3),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: SizedBox(
+        width: bodyW,
+        height: bodyH,
+        child: Center(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xFF1A1A1A),
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+    final tailBox = _Tail(direction: towardCard);
+    return Positioned(
+      left: left,
+      top: top,
+      child: IgnorePointer(
+        child: horizontal
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: towardCard == 'left'
+                    ? [tailBox, bubble]
+                    : [bubble, tailBox],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: towardCard == 'up'
+                    ? [tailBox, bubble]
+                    : [bubble, tailBox],
               ),
       ),
     );
+  }
+}
+
+class _Tail extends StatelessWidget {
+  const _Tail({required this.direction});
+
+  final String direction;
+
+  @override
+  Widget build(BuildContext context) {
+    final horizontal = direction == 'left' || direction == 'right';
+    return CustomPaint(
+      size: horizontal ? const Size(8, 14) : const Size(14, 8),
+      painter: _TailPainter(direction),
+    );
+  }
+}
+
+class _TailPainter extends CustomPainter {
+  const _TailPainter(this.direction);
+
+  final String direction;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path();
+    if (direction == 'up') {
+      path
+        ..moveTo(0, size.height)
+        ..lineTo(size.width / 2, 0)
+        ..lineTo(size.width, size.height);
+    } else if (direction == 'down') {
+      path
+        ..moveTo(0, 0)
+        ..lineTo(size.width / 2, size.height)
+        ..lineTo(size.width, 0);
+    } else if (direction == 'left') {
+      path
+        ..moveTo(size.width, 0)
+        ..lineTo(0, size.height / 2)
+        ..lineTo(size.width, size.height);
+    } else {
+      path
+        ..moveTo(0, 0)
+        ..lineTo(size.width, size.height / 2)
+        ..lineTo(0, size.height);
+    }
+    path.close();
+    canvas.drawPath(path, Paint()..color = const Color(0xFFF7F1E3));
+  }
+
+  @override
+  bool shouldRepaint(covariant _TailPainter oldDelegate) {
+    return oldDelegate.direction != direction;
   }
 }
 
 class _SlapButton extends StatelessWidget {
   const _SlapButton({
+    required this.size,
     required this.enabled,
     required this.hot,
     required this.onPressed,
   });
 
+  final double size;
   final bool enabled;
   final bool hot;
   final VoidCallback? onPressed;
@@ -942,11 +1151,12 @@ class _SlapButton extends StatelessWidget {
       label: 'Slap',
       onTap: onPressed,
       container: true,
+      excludeSemantics: true,
       child: GestureDetector(
         onTap: onPressed,
         child: SizedBox(
-          width: _stack,
-          height: _stack,
+          width: size,
+          height: size,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: enabled
@@ -955,14 +1165,28 @@ class _SlapButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: hot ? _gold : _edge, width: 3),
             ),
-            child: const Center(
-              child: ExcludeSemantics(
-                child: Icon(
-                  Icons.front_hand,
-                  size: 36,
-                  color: Color(0xFFF7F1E3),
+            child: Stack(
+              children: [
+                const Positioned(
+                  left: 8,
+                  top: 6,
+                  child: Text(
+                    'Slap',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFF7F1E3),
+                    ),
+                  ),
                 ),
-              ),
+                const Center(
+                  child: Icon(
+                    Icons.front_hand,
+                    size: 48,
+                    color: Color(0xFFF7F1E3),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

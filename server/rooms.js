@@ -69,6 +69,7 @@ export function createRoomBook({
         host: player.id === room.hostId,
         count: seen ? seen.counts[seat] ?? 0 : 0,
         slapped: seen ? Boolean(seen.slaps[seat]) : false,
+        waiting: player.waiting === true,
       })),
       remainMs: room.deadline == null ? null : Math.max(0, room.deadline - now()),
     };
@@ -175,11 +176,49 @@ export function createRoomBook({
     return { ok: true, code, playerId: player.id };
   }
 
+  function holdSeat(socketId, payload) {
+    const code = String(payload?.code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+    const room = code.length === 4 ? rooms.get(code) : undefined;
+    if (!room) return { ok: false, error: "Room not found" };
+    const existing = sockets.get(socketId);
+    if (existing) {
+      if (existing.code !== code) return { ok: false, error: "Already in a room" };
+      return { ok: true, code, playerId: existing.playerId };
+    }
+    if (room.game && room.game.phase !== "won") {
+      return { ok: false, error: "Game already started" };
+    }
+    if (room.players.length >= 4) return { ok: false, error: "Room is full" };
+    const player = {
+      id: randomBytes(9).toString("base64url"),
+      name: "Waiting",
+      socketId,
+      connected: true,
+      waiting: true,
+    };
+    room.players.push(player);
+    sockets.set(socketId, { code, playerId: player.id });
+    return { ok: true, code, playerId: player.id };
+  }
+
   function joinRoom(socketId, payload) {
     const code = String(payload?.code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
     const room = code.length === 4 ? rooms.get(code) : undefined;
     if (!room) return { ok: false, error: "Room not found" };
     const existing = sockets.get(socketId);
+    if (existing && existing.code === code) {
+      const seated = room.players.find((player) => player.id === existing.playerId);
+      if (seated?.waiting) {
+        const trimmed = cleanName(payload?.name);
+        if (trimmed) {
+          seated.name = trimmed;
+          seated.waiting = false;
+        }
+        seated.connected = true;
+        seated.socketId = socketId;
+        return { ok: true, code, playerId: seated.id };
+      }
+    }
     if (existing && !(existing.code === code && existing.playerId === payload?.playerId)) {
       return { ok: false, error: "Already in a room" };
     }
@@ -260,7 +299,11 @@ export function createRoomBook({
     if (room.game && room.game.phase !== "won") {
       return { ok: false, error: "Game already started" };
     }
-    room.players = room.players.filter((player) => player.connected);
+    for (const player of room.players) {
+      if (!player.waiting || !player.socketId) continue;
+      sockets.delete(player.socketId);
+    }
+    room.players = room.players.filter((player) => player.connected && !player.waiting);
     if (room.players.length && !room.players.some((player) => player.id === room.hostId)) {
       room.hostId = room.players[0].id;
     }
@@ -280,6 +323,7 @@ export function createRoomBook({
   return {
     createRoom,
     joinRoom,
+    holdSeat,
     leave: disconnect,
     disconnect,
     startGame,

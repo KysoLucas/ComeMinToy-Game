@@ -34,8 +34,9 @@ try {
   await click(bob, "Join room");
   await waitFor(alice, "Bob");
   await click(alice, "Start");
-  await waitFor(alice, "Bob · 26 cards");
-  await waitFor(bob, "Alice · 26 cards");
+  await waitFor(alice, "North Bob");
+  await waitFor(bob, "North Alice");
+  await waitFor(alice, "Deal in");
   await waitFor(alice, "Play 26");
   await waitFor(bob, "Your cards 26");
   await waitFor(alice, /\d+ ms/);
@@ -223,7 +224,7 @@ async function handButtons(page) {
           if (!cursor || seen.has(cursor)) continue;
           seen.add(cursor);
           const rect = cursor.getBoundingClientRect();
-          if (rect.width >= 40 && rect.height >= 48 && rect.height <= 180 && rect.width <= 340) {
+          if (rect.width >= 80 && rect.height >= 80 && rect.height <= 240 && rect.width <= 240) {
             fits.push({
               label: nameOf(node),
               x: rect.x,
@@ -237,7 +238,7 @@ async function handButtons(page) {
           for (const child of cursor.children ?? []) queue.push(child);
         }
       }
-      fits.sort((a, b) => Math.abs(a.height - 112) - Math.abs(b.height - 112));
+      fits.sort((a, b) => Math.abs(a.width - a.height) - Math.abs(b.width - b.height) || b.width - a.width);
       return fits[0] ?? null;
     }
     return {
@@ -258,5 +259,8 @@ function assertHand(layout) {
   if (Math.abs((play.y + play.height / 2) - (slap.y + slap.height / 2)) > 30) {
     throw new Error(`the two buttons are not on one row ${JSON.stringify(layout)}`);
   }
-  if (play.height < 48 || slap.height < 48) throw new Error(`a hand button is below a tap target ${JSON.stringify(layout)}`);
+  if (Math.abs(play.width - play.height) > 12 || Math.abs(slap.width - slap.height) > 12) {
+    throw new Error(`the buttons are not square ${JSON.stringify(layout)}`);
+  }
+  if (play.width < 150 || slap.width < 150) throw new Error(`the buttons do not fill the bottom ${JSON.stringify(layout)}`);
 }

@@ -22,6 +22,7 @@ class Seat {
     required this.host,
     required this.count,
     required this.slapped,
+    this.waiting = false,
   });
 
   final int seat;
@@ -30,6 +31,7 @@ class Seat {
   final bool host;
   final int count;
   final bool slapped;
+  final bool waiting;
 
   String get label => '$name · $count cards';
 }
@@ -97,6 +99,7 @@ class RoomView {
               host: item['host'] == true,
               count: _asInt(item['count'], 0),
               slapped: item['slapped'] == true,
+              waiting: item['waiting'] == true,
             ),
           )
           .toList(),
@@ -136,6 +139,7 @@ class Session extends ChangeNotifier {
   String name = '';
   bool connected = false;
   bool confirmLeave = false;
+  bool entering = false;
   int? rttMs;
 
   int? get remainMs {
@@ -176,10 +180,13 @@ class Session extends ChangeNotifier {
             'name': name,
           }, ack: _onAck);
         } else if (name.isNotEmpty && pendingRoom != null) {
+          entering = true;
           socket.emitWithAck('room:join', {
             'name': name,
             'code': pendingRoom,
           }, ack: _onAck);
+        } else if (pendingRoom != null) {
+          socket.emitWithAck('room:hold', {'code': pendingRoom}, ack: _onAck);
         }
         _armPing();
         notifyListeners();
@@ -204,7 +211,8 @@ class Session extends ChangeNotifier {
     memory.name = next;
     memory.persist();
     error = null;
-    final code = pendingRoom;
+    final code =
+        pendingRoom ?? (view?.mine?.waiting == true ? memory.code : null);
     if (code != null) {
       joinRoom(name, code);
       return;
@@ -222,6 +230,8 @@ class Session extends ChangeNotifier {
     name = next;
     memory.name = next;
     memory.persist();
+    entering = true;
+    notifyListeners();
     _emit('room:create', {'name': name});
   }
 
@@ -235,6 +245,8 @@ class Session extends ChangeNotifier {
     name = next;
     memory.name = next;
     memory.persist();
+    entering = true;
+    notifyListeners();
     _emit('room:join', {'name': name, 'code': rawCode.trim()});
   }
 
@@ -281,6 +293,7 @@ class Session extends ChangeNotifier {
     final socket = _socket;
     if (socket == null || !connected) {
       error = 'Offline';
+      entering = false;
       notifyListeners();
       return;
     }
@@ -293,12 +306,16 @@ class Session extends ChangeNotifier {
     final map = _asMap(data);
     final quiet = _quietMiss;
     _quietMiss = false;
+    final missed = map['error'];
     if (map['ok'] == true) {
       error = null;
-    } else if (quiet && map['error'] == 'Not your turn') {
+    } else if (quiet && missed == 'Not your turn') {
+      return;
+    } else if (missed == 'Not your turn' || missed == 'No card to slap') {
       return;
     } else {
-      error = map['error'] as String? ?? 'Try again';
+      error = missed as String? ?? 'Try again';
+      entering = false;
     }
     notifyListeners();
   }
@@ -308,11 +325,12 @@ class Session extends ChangeNotifier {
     final next = RoomView.fromJson(_asMap(data));
     view = next;
     error = null;
+    entering = false;
     if (next.playerId != null && next.code.isNotEmpty) {
       memory.code = next.code;
       memory.playerId = next.playerId;
       memory.persist();
-      pendingRoom = null;
+      if (next.mine?.waiting != true) pendingRoom = null;
     }
     _remain = next.remainMs;
     _remainAt = DateTime.now();
