@@ -6,7 +6,14 @@ import { Server } from "socket.io";
 import { createRoomBook } from "./rooms.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const defaultWebRoot = path.resolve(here, "../client/build/web");
+
+function findWebRoot() {
+  if (process.env.WEB_ROOT) return process.env.WEB_ROOT;
+  const candidates = ["../dist", "../client/build/web"].map((dir) => path.resolve(here, dir));
+  return candidates.find((dir) => existsSync(path.join(dir, "index.html"))) ?? candidates.at(-1);
+}
+
+const defaultWebRoot = findWebRoot();
 
 const mime = {
   ".html": "text/html; charset=utf-8",

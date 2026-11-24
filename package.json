@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
+    "build": "node script/stage-web.mjs",
     "test": "node --test server/*.test.js",
     "build:web": "cd client && flutter build web --release",
     "verify:room": "node script/two-player.mjs"
