@@ -143,6 +143,7 @@ class Session extends ChangeNotifier {
   bool confirmLeave = false;
   bool entering = false;
   int? rttMs;
+  final ValueNotifier<String> connection = ValueNotifier<String>('Connecting');
 
   int? get remainMs {
     final remain = _remain;
@@ -191,11 +192,13 @@ class Session extends ChangeNotifier {
           socket.emitWithAck('room:hold', {'code': pendingRoom}, ack: _onAck);
         }
         _armPing();
+        _syncConnection();
         notifyListeners();
       })
       ..onDisconnect((_) {
         if (_closed) return;
         connected = false;
+        _syncConnection();
         notifyListeners();
       })
       ..on('room:state', _onView)
@@ -289,6 +292,7 @@ class Session extends ChangeNotifier {
     _ping?.cancel();
     _bannerTimer?.cancel();
     _socket?.dispose();
+    connection.dispose();
     super.dispose();
   }
 
@@ -371,9 +375,15 @@ class Session extends ChangeNotifier {
       ack: (data) {
         if (_closed || _asMap(data)['ok'] != true) return;
         rttMs = DateTime.now().millisecondsSinceEpoch - started;
-        notifyListeners();
+        _syncConnection();
       },
     );
+  }
+
+  void _syncConnection() {
+    if (_closed) return;
+    final next = pingLabel;
+    if (connection.value != next) connection.value = next;
   }
 }
 

@@ -61,6 +61,18 @@ try {
   }
   await click(alice, "Play");
   await waitFor(alice, "Dealing");
+  const duringDeal = [];
+  for (let i = 0; i < 6; i += 1) {
+    const body = await text(alice);
+    if (!body.includes("Dealing")) break;
+    const boards = [...body.matchAll(/Board[^\n]*/g)].map((match) => match[0]);
+    duringDeal.push(boards.sort().join("|"));
+    await delay(30);
+  }
+  const distinct = new Set(duringDeal.filter(Boolean));
+  if (duringDeal.length >= 2 && distinct.size > 1) {
+    throw new Error(`the board card flickered during the deal ${JSON.stringify(duringDeal)}`);
+  }
   await alice.screenshot({ path: path.join(shots, "slapjack-deal.png") });
   await waitFor(alice, "Board ");
   await waitFor(bob, "Board ");

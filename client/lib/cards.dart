@@ -198,6 +198,8 @@ class BoardSlot extends StatelessWidget {
       label: topCard == null
           ? 'Board'
           : 'Board ${topCard.rank} ${topCard.suit}',
+      container: true,
+      explicitChildNodes: true,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

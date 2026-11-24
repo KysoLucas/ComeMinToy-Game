@@ -337,6 +337,8 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
   bool _armDeal = false;
   bool _dealFlying = false;
   bool _armGather = false;
+  bool _gatherFlying = false;
+  final Map<GlobalKey, Offset> _centers = {};
   int? _autoTurn;
   int? _autoPile;
 
@@ -354,7 +356,7 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 800),
     );
     _motion.addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
+      if (status == AnimationStatus.completed && mounted && _dealFlying) {
         setState(() {
           _deal = null;
           _dealFlying = false;
@@ -362,8 +364,11 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
       }
     });
     _gatherMotion.addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
-        setState(() => _gather = null);
+      if (status == AnimationStatus.completed && mounted && _gatherFlying) {
+        setState(() {
+          _gather = null;
+          _gatherFlying = false;
+        });
       }
     });
   }
@@ -423,6 +428,7 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
           added: prior.pileCount,
         );
         _armGather = true;
+        _gatherFlying = false;
       }
       _deal = null;
       _armDeal = false;
@@ -475,7 +481,10 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
           _motion.forward(from: 0);
           if (mounted) setState(() => _dealFlying = true);
         }
-        if (gather && _gather != null) _gatherMotion.forward(from: 0);
+        if (gather && _gather != null) {
+          _gatherMotion.forward(from: 0);
+          if (mounted) setState(() => _gatherFlying = true);
+        }
         var changed = false;
         for (final seat in arm) {
           if (_slaps.containsKey(seat)) continue;
@@ -505,26 +514,36 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
         final side = _buttonSide(constraints);
         return Stack(
           key: _layerKey,
+          clipBehavior: Clip.none,
           children: [
-            if (gather != null) _scoop(gather),
-            Column(
-              children: [
-                _compass(view, places, 'North', deal, gather),
-                Expanded(
-                  child: Row(
-                    children: [
-                      _compass(view, places, 'West', deal, gather),
-                      Expanded(child: _board(view, deal)),
-                      _compass(view, places, 'East', deal, gather),
-                    ],
+            if (gather != null && _gatherFlying) _scoop(gather),
+            RepaintBoundary(
+              child: Column(
+                children: [
+                  _compass(view, places, 'North', deal, gather),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        _compass(view, places, 'West', deal, gather),
+                        Expanded(child: _board(view)),
+                        _compass(view, places, 'East', deal, gather),
+                      ],
+                    ),
                   ),
-                ),
-                _south(view, deal, gather, side),
-              ],
+                  _south(view, deal, gather, side),
+                ],
+              ),
             ),
-            if (deal != null) _flight(deal),
+            if (deal != null && _dealFlying) ...[
+              _flight(deal),
+              const _MotionLabel('Dealing'),
+            ],
             _saidNear(view),
-            if (gather != null) _addedFloat(gather),
+            if (gather != null && _gatherFlying) ...[
+              _addedFloat(gather),
+              _MotionLabel('Gathering'),
+              _MotionLabel('Added ${gather.added}'),
+            ],
             Align(
               alignment: const Alignment(0, -0.52),
               child: _BumpToast(message: toast),
@@ -542,17 +561,18 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _board(RoomView view, _Deal? deal) {
-    return AnimatedBuilder(
-      animation: _motion,
-      builder: (context, _) {
-        final covered = deal != null && (!_dealFlying || _motion.value < 0.98);
-        final top = covered ? deal.heldTop : view.top;
-        return Center(
-          child: BoardSlot(top: top, cardKey: _boardKey),
-        );
-      },
-    );
+  Widget _board(RoomView view) {
+    final deal = _deal;
+    final gather = _gather;
+    final CardFace? top;
+    if (deal != null) {
+      top = deal.heldTop;
+    } else if (gather != null && !_gatherFlying) {
+      top = gather.top;
+    } else {
+      top = view.top;
+    }
+    return Center(child: BoardSlot(top: top, cardKey: _boardKey));
   }
 
   Widget _compass(
@@ -690,30 +710,29 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
       child: IgnorePointer(
         child: AnimatedBuilder(
           animation: _motion,
-          builder: (context, _) {
+          builder: (context, child) {
             final from = _center(_seatKey(deal.seat));
             final to = _center(_boardKey);
-            if (from == null || to == null) return const SizedBox.shrink();
+            if (from == null || to == null || child == null) {
+              return const SizedBox.shrink();
+            }
             final t = Curves.easeOutCubic.transform(_motion.value);
             final center = Offset.lerp(from, to, t)!;
             final scale = 0.56 + (0.44 * t);
             return Stack(
+              clipBehavior: Clip.none,
               children: [
                 Positioned(
                   left: center.dx - 55,
                   top: center.dy - 77,
-                  child: Transform.scale(
-                    scale: scale,
-                    child: Semantics(
-                      label: 'Dealing',
-                      container: true,
-                      child: ExcludeSemantics(child: FaceCard(card: deal.card)),
-                    ),
-                  ),
+                  child: Transform.scale(scale: scale, child: child),
                 ),
               ],
             );
           },
+          child: RepaintBoundary(
+            child: ExcludeSemantics(child: FaceCard(card: deal.card)),
+          ),
         ),
       ),
     );
@@ -724,45 +743,45 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
       child: IgnorePointer(
         child: AnimatedBuilder(
           animation: _gatherMotion,
-          builder: (context, _) {
+          builder: (context, child) {
             final from = _center(_boardKey);
             final seat = _center(_seatKey(gather.seat));
-            if (from == null || seat == null) return const SizedBox.shrink();
+            if (from == null || seat == null || child == null) {
+              return const SizedBox.shrink();
+            }
             final to = Offset(seat.dx, seat.dy + _oppStack * 0.46);
             final t = Curves.easeInOut.transform(_gatherMotion.value);
             final center = Offset.lerp(from, to, t)!;
             final scale = 1 - (0.46 * t);
             return Stack(
+              clipBehavior: Clip.none,
               children: [
                 Positioned(
                   left: center.dx - 55,
                   top: center.dy - 77,
-                  child: Transform.scale(
-                    scale: scale,
-                    child: Semantics(
-                      label: 'Gathering',
-                      container: true,
-                      child: ExcludeSemantics(
-                        child: Stack(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(left: 14, top: 10),
-                              child: CardBack(width: 110, height: 154),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(left: 7, top: 5),
-                              child: CardBack(width: 110, height: 154),
-                            ),
-                            FaceCard(card: gather.top),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: Transform.scale(scale: scale, child: child),
                 ),
               ],
             );
           },
+          child: RepaintBoundary(
+            child: ExcludeSemantics(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(left: 14, top: 10),
+                    child: CardBack(width: 110, height: 154),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 7, top: 5),
+                    child: CardBack(width: 110, height: 154),
+                  ),
+                  FaceCard(card: gather.top),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -773,34 +792,32 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
       child: IgnorePointer(
         child: AnimatedBuilder(
           animation: _gatherMotion,
-          builder: (context, _) {
+          builder: (context, child) {
             final seat = _center(_seatKey(gather.seat));
-            if (seat == null) return const SizedBox.shrink();
+            if (seat == null || child == null) return const SizedBox.shrink();
             final t = Curves.easeOut.transform(_gatherMotion.value);
             return Stack(
+              clipBehavior: Clip.none,
               children: [
                 Positioned(
                   left: seat.dx - 36,
                   top: seat.dy - 54 - (32 * t),
-                  child: Semantics(
-                    label: 'Added ${gather.added}',
-                    container: true,
-                    child: Text(
-                      '+${gather.added}',
-                      style: const TextStyle(
-                        color: _gold,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        shadows: [
-                          Shadow(color: Color(0xCC000000), blurRadius: 8),
-                        ],
-                      ),
-                    ),
-                  ),
+                  child: child,
                 ),
               ],
             );
           },
+          child: ExcludeSemantics(
+            child: Text(
+              '+${gather.added}',
+              style: const TextStyle(
+                color: _gold,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                shadows: [Shadow(color: Color(0xCC000000), blurRadius: 8)],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -821,45 +838,41 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
       child: IgnorePointer(
         child: AnimatedBuilder(
           animation: motion,
-          builder: (context, _) {
+          builder: (context, child) {
             final from = _center(_seatKey(seat));
             final to = _center(_boardKey);
-            if (from == null || to == null) return const SizedBox.shrink();
+            if (from == null || to == null || child == null) {
+              return const Stack(children: [_MotionLabel('Slapping')]);
+            }
             final t = Curves.easeOut.transform(motion.value);
             final center = Offset.lerp(from, to, t)!;
             return Stack(
+              clipBehavior: Clip.none,
               children: [
+                const _MotionLabel('Slapping'),
                 Positioned(
                   left: center.dx - 42,
                   top: center.dy - 42,
-                  child: Semantics(
-                    label: 'Slapping',
-                    container: true,
-                    child: ExcludeSemantics(
-                      child: Transform.rotate(
-                        angle: turns * 3.1415926535 * 2,
-                        child: const Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Icon(
-                              Icons.back_hand,
-                              size: 86,
-                              color: Color(0xFF1A1A1A),
-                            ),
-                            Icon(
-                              Icons.back_hand,
-                              size: 74,
-                              color: Color(0xFFFFB74D),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  child: Transform.rotate(
+                    angle: turns * 3.1415926535 * 2,
+                    child: child,
                   ),
                 ),
               ],
             );
           },
+          child: const RepaintBoundary(
+            child: ExcludeSemantics(
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(Icons.back_hand, size: 86, color: Color(0xFF1A1A1A)),
+                  Icon(Icons.back_hand, size: 74, color: Color(0xFFFFB74D)),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -868,10 +881,19 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
   Offset? _center(GlobalKey key) {
     final stack = _layerKey.currentContext?.findRenderObject() as RenderBox?;
     final box = key.currentContext?.findRenderObject() as RenderBox?;
-    if (stack == null || box == null || !stack.hasSize || !box.hasSize) {
-      return null;
+    if (stack != null &&
+        box != null &&
+        stack.attached &&
+        box.attached &&
+        stack.hasSize &&
+        box.hasSize) {
+      final center = stack.globalToLocal(
+        box.localToGlobal(box.size.center(Offset.zero)),
+      );
+      _centers[key] = center;
+      return center;
     }
-    return stack.globalToLocal(box.localToGlobal(box.size.center(Offset.zero)));
+    return _centers[key];
   }
 
   String _status(RoomView view) {
@@ -1434,6 +1456,7 @@ class _DealClock extends StatefulWidget {
 
 class _DealClockState extends State<_DealClock> {
   Timer? _timer;
+  int? _shown;
 
   @override
   void initState() {
@@ -1441,7 +1464,8 @@ class _DealClockState extends State<_DealClock> {
     _timer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (!mounted) return;
       widget.onTick?.call();
-      setState(() {});
+      final next = _read();
+      if (next != _shown) setState(() => _shown = next);
     });
   }
 
@@ -1451,11 +1475,17 @@ class _DealClockState extends State<_DealClock> {
     super.dispose();
   }
 
+  int? _read() {
+    final remain = widget.session.remainMs;
+    if (remain == null) return null;
+    return (remain / 1000).ceil();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final remain = widget.session.remainMs;
-    if (remain == null) return const SizedBox.shrink();
-    final seconds = (remain / 1000).ceil();
+    final seconds = _read();
+    _shown = seconds;
+    if (seconds == null) return const SizedBox.shrink();
     final number = Text(
       '$seconds',
       style: TextStyle(
@@ -1465,23 +1495,44 @@ class _DealClockState extends State<_DealClock> {
         height: 1,
       ),
     );
-    return Semantics(
-      label: 'Deal in $seconds',
-      container: true,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          number,
-          Text(
-            'auto deal',
-            style: TextStyle(
-              fontSize: widget.large ? 12 : 10,
-              fontWeight: FontWeight.w800,
-              color: _gold,
+    return RepaintBoundary(
+      child: Semantics(
+        label: 'Deal in $seconds',
+        container: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            number,
+            Text(
+              'auto deal',
+              style: TextStyle(
+                fontSize: widget.large ? 12 : 10,
+                fontWeight: FontWeight.w800,
+                color: _gold,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MotionLabel extends StatelessWidget {
+  const _MotionLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      top: 0,
+      child: Semantics(
+        label: label,
+        container: true,
+        child: const SizedBox(width: 8, height: 8),
       ),
     );
   }

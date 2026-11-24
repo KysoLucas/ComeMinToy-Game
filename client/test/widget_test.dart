@@ -59,6 +59,53 @@ void main() {
     session.dispose();
   });
 
+  testWidgets('the board card stays while the next card is in flight', (
+    tester,
+  ) async {
+    final session = Session(autostart: false);
+    session.view = _room(counts: const [26, 26], pile: 0, top: null, turn: 0);
+    await tester.pumpWidget(_table(session));
+    await tester.pump();
+    session.view = _room(
+      counts: const [25, 26],
+      pile: 1,
+      top: const CardFace(rank: 'K', suit: '♥'),
+      turn: 1,
+    );
+    session.notifyListeners();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    session.view = _room(
+      counts: const [25, 25],
+      pile: 2,
+      top: const CardFace(rank: 'Q', suit: '♠'),
+      turn: 0,
+    );
+    session.notifyListeners();
+    await tester.pump();
+    await tester.pump();
+
+    var dealingFrames = 0;
+    for (var i = 0; i < 40; i++) {
+      final dealing = find.bySemanticsLabel('Dealing').evaluate().isNotEmpty;
+      final held = find.bySemanticsLabel('Board K ♥').evaluate().isNotEmpty;
+      final landed = find.bySemanticsLabel('Board Q ♠').evaluate().isNotEmpty;
+      expect(find.byType(FaceCard), findsWidgets);
+      if (dealing) {
+        dealingFrames += 1;
+        expect(held, isTrue);
+        expect(landed, isFalse);
+      }
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(dealingFrames, greaterThan(3));
+    expect(find.bySemanticsLabel('Dealing'), findsNothing);
+    expect(find.bySemanticsLabel('Board Q ♠'), findsOneWidget);
+    expect(find.byType(FaceCard), findsOneWidget);
+    session.dispose();
+  });
+
   testWidgets('a finished game ranks players from fewest cards', (
     tester,
   ) async {

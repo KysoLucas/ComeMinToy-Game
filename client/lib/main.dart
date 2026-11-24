@@ -59,11 +59,16 @@ class GameScreen extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
                       child: Row(
                         children: [
-                          Text(
-                            session.pingLabel,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
+                          ListenableBuilder(
+                            listenable: session.connection,
+                            builder: (context, _) => RepaintBoundary(
+                              child: Text(
+                                session.connection.value,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
                           ),
                           const Spacer(),
@@ -93,7 +98,7 @@ class GameScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                    Expanded(child: page),
+                    Expanded(child: RepaintBoundary(child: page)),
                   ],
                 ),
               ),
