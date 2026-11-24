@@ -77,19 +77,23 @@ class RoomView {
       turn: json['turn'] == null ? null : _asInt(json['turn'], 0),
       winner: json['winner'] == null ? null : _asInt(json['winner'], 0),
       pileCount: _asInt(json['pileCount'], 0),
-      top: top is Map ? CardFace(rank: '${top['rank']}', suit: '${top['suit']}') : null,
+      top: top is Map
+          ? CardFace(rank: '${top['rank']}', suit: '${top['suit']}')
+          : null,
       said: json['said'] as String?,
       saidBy: json['saidBy'] == null ? null : _asInt(json['saidBy'], 0),
       players: (json['players'] as List? ?? const [])
           .whereType<Map>()
-          .map((item) => Seat(
-                seat: _asInt(item['seat'], 0),
-                name: '${item['name'] ?? 'Player'}',
-                connected: item['connected'] == true,
-                host: item['host'] == true,
-                count: _asInt(item['count'], 0),
-                slapped: item['slapped'] == true,
-              ))
+          .map(
+            (item) => Seat(
+              seat: _asInt(item['seat'], 0),
+              name: '${item['name'] ?? 'Player'}',
+              connected: item['connected'] == true,
+              host: item['host'] == true,
+              count: _asInt(item['count'], 0),
+              slapped: item['slapped'] == true,
+            ),
+          )
           .toList(),
     );
   }
@@ -223,11 +227,15 @@ class Session extends ChangeNotifier {
     final socket = _socket;
     if (socket == null || !connected || _closed) return;
     final started = DateTime.now().millisecondsSinceEpoch;
-    socket.emitWithAck('net:ping', {'t': started}, ack: (data) {
-      if (_closed || _asMap(data)['ok'] != true) return;
-      rttMs = DateTime.now().millisecondsSinceEpoch - started;
-      notifyListeners();
-    });
+    socket.emitWithAck(
+      'net:ping',
+      {'t': started},
+      ack: (data) {
+        if (_closed || _asMap(data)['ok'] != true) return;
+        rttMs = DateTime.now().millisecondsSinceEpoch - started;
+        notifyListeners();
+      },
+    );
   }
 }
 

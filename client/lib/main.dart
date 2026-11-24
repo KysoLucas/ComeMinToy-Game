@@ -48,8 +48,8 @@ class GameScreen extends StatelessWidget {
             final page = view == null
                 ? HomeForm(session: session)
                 : view.phase == 'lobby'
-                    ? WaitingRoom(session: session)
-                    : TablePage(session: session);
+                ? WaitingRoom(session: session)
+                : TablePage(session: session);
             return Column(
               children: [
                 Padding(
@@ -58,13 +58,22 @@ class GameScreen extends StatelessWidget {
                     children: [
                       Text(
                         session.pingLabel,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const Spacer(),
                       if (view != null)
-                        Text('Room ${view.code}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                        Text(
+                          'Room ${view.code}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
                       if (view != null)
-                        TextButton(onPressed: session.leave, child: const Text('Leave')),
+                        TextButton(
+                          onPressed: session.leave,
+                          child: const Text('Leave'),
+                        ),
                     ],
                   ),
                 ),
@@ -73,7 +82,10 @@ class GameScreen extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                     child: Text(
                       session.error!,
-                      style: const TextStyle(color: Color(0xFFFFB4A8), fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                        color: Color(0xFFFFB4A8),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 Expanded(child: page),

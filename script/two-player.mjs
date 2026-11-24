@@ -32,16 +32,26 @@ try {
   await click(bob, "Join room");
   await waitFor(alice, "Bob");
   await click(alice, "Start");
-  await waitFor(alice, "Alice · 26 cards");
-  await waitFor(bob, "Bob · 26 cards");
+  await waitFor(alice, "Bob · 26 cards");
+  await waitFor(bob, "Alice · 26 cards");
+  await waitFor(alice, "Play 26");
+  await waitFor(bob, "Your cards 26");
   await waitFor(alice, /\d+ ms/);
   await waitFor(bob, /\d+ ms/);
+  const aliceHand = await handButtons(alice);
+  const bobHand = await handButtons(bob);
+  assertHand(aliceHand);
+  assertHand(bobHand);
+  await mkdir(shots, { recursive: true });
+  await alice.screenshot({ path: path.join(shots, "slapjack-hand.png") });
   const alicePing = await text(alice);
   const bobPing = await text(bob);
   if (!/\d+ ms/.test(alicePing) || !/\d+ ms/.test(bobPing)) {
     throw new Error("ping did not render");
   }
   await click(alice, "Play");
+  await waitFor(alice, "Dealing");
+  await alice.screenshot({ path: path.join(shots, "slapjack-deal.png") });
   await waitFor(alice, "Pile 1");
   await waitFor(bob, "Pile 1");
   await mkdir(shots, { recursive: true });
@@ -60,6 +70,8 @@ try {
     url: `http://127.0.0.1:${running.port}`,
     alicePing: alicePing.match(/\d+ ms/)[0],
     bobPing: bobPing.match(/\d+ ms/)[0],
+    aliceHand,
+    bobHand,
     resolution: /too slow/.test(after) ? "late" : "wrong",
   }));
 } finally {
@@ -185,4 +197,61 @@ async function roomCode(page) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function handButtons(page) {
+  await page.bringToFront();
+  const layout = await page.evaluate(() => {
+    function nameOf(node) {
+      const aria = node.getAttribute("aria-label");
+      if (aria) return aria;
+      return (node.textContent ?? "").trim();
+    }
+    function box(match) {
+      const nodes = [...document.querySelectorAll("[aria-label], [role='button']")].filter((item) => match(nameOf(item)));
+      const fits = [];
+      for (const node of nodes) {
+        const seen = new Set();
+        const queue = [node];
+        while (queue.length) {
+          const cursor = queue.shift();
+          if (!cursor || seen.has(cursor)) continue;
+          seen.add(cursor);
+          const rect = cursor.getBoundingClientRect();
+          if (rect.width >= 40 && rect.height >= 48 && rect.height <= 180 && rect.width <= 340) {
+            fits.push({
+              label: nameOf(node),
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height,
+            });
+            break;
+          }
+          if (cursor.parentElement) queue.push(cursor.parentElement);
+          for (const child of cursor.children ?? []) queue.push(child);
+        }
+      }
+      fits.sort((a, b) => Math.abs(a.height - 112) - Math.abs(b.height - 112));
+      return fits[0] ?? null;
+    }
+    return {
+      viewport: window.innerWidth,
+      play: box((label) => label.startsWith("Play ") || label.startsWith("Your cards ")),
+      slap: box((label) => label === "Slap"),
+    };
+  });
+  return layout;
+}
+
+function assertHand(layout) {
+  if (layout.viewport !== 390) throw new Error(`expected a phone width, got ${layout.viewport}`);
+  const { play, slap } = layout;
+  if (!play || !slap) throw new Error(`hand is missing a button ${JSON.stringify(layout)}`);
+  if (!/26/.test(play.label)) throw new Error(`card count is not on the hand button ${play.label}`);
+  if (!(play.x + play.width <= slap.x + 8)) throw new Error(`play button is not left of slap ${JSON.stringify(layout)}`);
+  if (Math.abs((play.y + play.height / 2) - (slap.y + slap.height / 2)) > 30) {
+    throw new Error(`the two buttons are not on one row ${JSON.stringify(layout)}`);
+  }
+  if (play.height < 48 || slap.height < 48) throw new Error(`a hand button is below a tap target ${JSON.stringify(layout)}`);
 }

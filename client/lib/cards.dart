@@ -49,19 +49,26 @@ class CoveredFan extends StatelessWidget {
   final VoidCallback onPlay;
   final bool canPlay;
 
+  static const _countStyle = TextStyle(
+    color: Color(0xFFF7F1E3),
+    fontSize: 28,
+    fontWeight: FontWeight.w800,
+  );
+
   @override
   Widget build(BuildContext context) {
-    final shown = count == 0 ? 0 : math.min(count, 8);
+    final shown = count == 0 ? 0 : math.min(count, 6);
     return Semantics(
-      button: canPlay,
-      label: canPlay ? 'Play' : 'Your cards',
+      button: true,
+      enabled: canPlay,
+      label: canPlay ? 'Play $count' : 'Your cards $count',
       onTap: canPlay ? onPlay : null,
       container: true,
       child: GestureDetector(
-        onTap: onPlay,
+        onTap: canPlay ? onPlay : null,
         child: ExcludeSemantics(
           child: SizedBox(
-            height: 108,
+            height: 112,
             width: double.infinity,
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -74,27 +81,28 @@ class CoveredFan extends StatelessWidget {
                 ),
               ),
               child: shown == 0
-                  ? const Center(child: Text('No cards'))
+                  ? Center(child: Text('$count', style: _countStyle))
                   : Stack(
                       alignment: Alignment.center,
                       children: [
                         for (var i = 0; i < shown; i++)
                           Transform.translate(
-                            offset: Offset((i - (shown - 1) / 2) * 18, 0),
-                            child: const CardBack(width: 68, height: 96),
+                            offset: Offset((i - (shown - 1) / 2) * 6, 0),
+                            child: const CardBack(width: 62, height: 88),
                           ),
-                        if (canPlay)
-                          const Align(
-                            alignment: Alignment(0, 0.72),
-                            child: Text(
-                              'Play',
-                              style: TextStyle(
-                                color: Color(0xFFF0C14A),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
-                              ),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(0xE606261C),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
                             ),
+                            child: Text('$count', style: _countStyle),
                           ),
+                        ),
                       ],
                     ),
             ),
@@ -165,10 +173,16 @@ class FaceCard extends StatelessWidget {
 }
 
 class BoardSlot extends StatelessWidget {
-  const BoardSlot({super.key, required this.top, required this.pileCount});
+  const BoardSlot({
+    super.key,
+    required this.top,
+    required this.pileCount,
+    this.cardKey,
+  });
 
   final CardFace? top;
   final int pileCount;
+  final Key? cardKey;
 
   @override
   Widget build(BuildContext context) {
@@ -180,19 +194,24 @@ class BoardSlot extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (topCard == null)
-            Container(
-              width: 110,
-              height: 154,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0x99F7F1E3), width: 2),
-              ),
-              child: const Text('Board'),
-            )
-          else
-            FaceCard(card: topCard),
+          KeyedSubtree(
+            key: cardKey,
+            child: topCard == null
+                ? Container(
+                    width: 110,
+                    height: 154,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: const Color(0x99F7F1E3),
+                        width: 2,
+                      ),
+                    ),
+                    child: const Text('Board'),
+                  )
+                : FaceCard(card: topCard),
+          ),
           const SizedBox(height: 8),
           Text(
             'Pile $pileCount',
