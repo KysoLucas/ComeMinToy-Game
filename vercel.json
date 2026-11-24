@@ -1,3 +1,7 @@
 {
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/socket.io", "destination": "/api/socket" },
+    { "source": "/socket.io/(.*)", "destination": "/api/socket" }
+  ]
 }
