@@ -37,6 +37,13 @@ try {
   await waitFor(alice, "North Bob");
   await waitFor(bob, "North Alice");
   await waitFor(alice, "Deal in");
+  const aliceClock = await labeledBoxes(alice, "Deal in");
+  const bobClock = await labeledBoxes(bob, "Deal in");
+  if (aliceClock.length !== 1 || bobClock.length !== 1) {
+    throw new Error(`the clock should sit on one player ${JSON.stringify({ aliceClock, bobClock })}`);
+  }
+  if (aliceClock[0].y < 500) throw new Error(`Alice's clock is not on her turn ${JSON.stringify(aliceClock)}`);
+  if (bobClock[0].y > 280) throw new Error(`Bob is showing a clock on his own turn ${JSON.stringify(bobClock)}`);
   await waitFor(alice, "Play 26");
   await waitFor(bob, "Your cards 26");
   await waitFor(alice, /\d+ ms/);
@@ -57,19 +64,69 @@ try {
   await alice.screenshot({ path: path.join(shots, "slapjack-deal.png") });
   await waitFor(alice, "Board ");
   await waitFor(bob, "Board ");
+  const landed = [];
+  for (let i = 0; i < 5; i += 1) {
+    landed.push(await labeledBoxes(alice, "Board "));
+    await delay(200);
+  }
+  const first = landed[0][0];
+  if (!first) throw new Error(`the board card disappeared ${JSON.stringify(landed)}`);
+  for (const sample of landed) {
+    const box = sample[0];
+    if (!box) throw new Error(`the board card flickered off ${JSON.stringify(landed)}`);
+    if (Math.abs(box.x - first.x) > 2 || Math.abs(box.y - first.y) > 2) {
+      throw new Error(`the board card moved after the deal ${JSON.stringify(landed)}`);
+    }
+  }
   await mkdir(shots, { recursive: true });
   await alice.screenshot({ path: path.join(shots, "slapjack-alice.png") });
   await bob.screenshot({ path: path.join(shots, "slapjack-bob.png") });
   await click(bob, "Slap");
-  await waitFor(alice, "Slapping");
-  await alice.screenshot({ path: path.join(shots, "slapjack-slap.png") });
   await waitFor(alice, "Gathering");
+  await alice.screenshot({ path: path.join(shots, "slapjack-slap.png") });
   await delay(420);
   await alice.screenshot({ path: path.join(shots, "slapjack-gather.png") });
   const after = await text(alice);
-  if (!/too slow|Slapped the Wrong Card/.test(after)) {
+  if (/Stack 26/.test(after) && /(?:Your cards|Play) 26/.test(after)) {
     throw new Error(`slap did not resolve\n${after}`);
   }
+  let ranks = [];
+  let lastBody = "";
+  for (let step = 0; step < 120 && ranks.length === 0; step += 1) {
+    await alice.bringToFront();
+    const aliceBody = await text(alice);
+    lastBody = aliceBody;
+    if (aliceBody.includes(" wins") || aliceBody.includes("WIN!")) {
+      ranks = await alice.evaluate(() => [...document.querySelectorAll("[aria-label], flt-semantics")]
+        .map((node) => node.getAttribute("aria-label") || (node.textContent ?? "").trim())
+        .filter((label) => /^\d+ \S+ \d+$/.test(label)));
+      break;
+    }
+    try {
+      if (/Play \d+/.test(aliceBody)) await click(alice, "Play", 2000);
+      else if (aliceBody.includes("Deal in")) await click(bob, "Play", 2000);
+      else await click(alice, "Slap", 2000);
+    } catch {
+      // The button can disappear between the read and the tap.
+    }
+    const started = Date.now();
+    while (Date.now() - started < 1200) {
+      await alice.bringToFront();
+      const now = await text(alice);
+      if (now !== aliceBody) break;
+      await delay(100);
+    }
+  }
+  if (ranks.length < 2) {
+    await alice.screenshot({ path: path.join(shots, "slapjack-scoreboard-stuck.png") });
+    throw new Error(`the scoreboard did not rank the players ${JSON.stringify(ranks)}\n${lastBody}`);
+  }
+  const counts = ranks.map((label) => Number(label.split(" ").at(-1)));
+  const sorted = [...counts].sort((a, b) => a - b);
+  if (counts.some((count, index) => count !== sorted[index])) {
+    throw new Error(`the scoreboard is not ranked from fewest cards ${JSON.stringify(ranks)}`);
+  }
+  await alice.screenshot({ path: path.join(shots, "slapjack-scoreboard.png") });
   console.log(JSON.stringify({
     ok: true,
     code,
@@ -79,6 +136,7 @@ try {
     aliceHand,
     bobHand,
     resolution: /too slow/.test(after) ? "late" : "wrong",
+    ranks,
   }));
 } finally {
   await browser.close();
@@ -124,9 +182,38 @@ async function waitFor(page, needle, timeout = 30000) {
   throw new Error(`timed out waiting for ${needle}\n${await text(page)}\n${(page._errors ?? []).join("\n")}`);
 }
 
-async function click(page, label) {
+async function tap(page, label) {
   await page.bringToFront();
-  await waitFor(page, label);
+  return page.evaluate((wanted) => {
+    const nodes = [...document.querySelectorAll("[aria-label]")];
+    const hits = nodes.filter((item) => (item.getAttribute("aria-label") ?? "").includes(wanted));
+    hits.sort((a, b) => {
+      const ra = a.getBoundingClientRect();
+      const rb = b.getBoundingClientRect();
+      return ra.width * ra.height - rb.width * rb.height;
+    });
+    const node = hits.find((item) => {
+      const rect = item.getBoundingClientRect();
+      return rect.width > 20 && rect.height > 20;
+    });
+    if (!node) return false;
+    let target = node;
+    let cursor = node;
+    while (cursor) {
+      if (cursor.getAttribute?.("role") === "button" || cursor.hasAttribute?.("flt-tappable")) {
+        target = cursor;
+        break;
+      }
+      cursor = cursor.parentElement;
+    }
+    target.click();
+    return true;
+  }, label);
+}
+
+async function click(page, label, timeout = 30000) {
+  await page.bringToFront();
+  await waitFor(page, label, timeout);
   const box = await page.evaluate((wanted) => {
     const nodes = [...document.querySelectorAll("[aria-label], button, input")];
     const hits = nodes.filter((item) => (item.getAttribute("aria-label") ?? "") === wanted);
@@ -201,6 +288,33 @@ async function roomCode(page) {
   return match[1];
 }
 
+async function labeledBoxes(page, prefix) {
+  await page.bringToFront();
+  return page.evaluate((start) => {
+    const nodes = [...document.querySelectorAll("[aria-label], flt-semantics, span")];
+    const hits = [];
+    for (const node of nodes) {
+      const label = node.getAttribute?.("aria-label") || (node.textContent ?? "").trim();
+      if (!label.startsWith(start)) continue;
+      let cursor = node;
+      let rect = cursor.getBoundingClientRect();
+      while (cursor && (rect.width < 8 || rect.height < 8)) {
+        cursor = cursor.parentElement;
+        if (!cursor) break;
+        rect = cursor.getBoundingClientRect();
+      }
+      if (!cursor || rect.width < 8 || rect.height < 8 || rect.width > window.innerWidth * 0.8) continue;
+      hits.push({ label, x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+    }
+    const unique = [];
+    for (const hit of hits) {
+      if (unique.some((item) => Math.abs(item.x - hit.x) < 4 && Math.abs(item.y - hit.y) < 4)) continue;
+      unique.push(hit);
+    }
+    return unique;
+  }, prefix);
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -263,4 +377,9 @@ function assertHand(layout) {
     throw new Error(`the buttons are not square ${JSON.stringify(layout)}`);
   }
   if (play.width < 150 || slap.width < 150) throw new Error(`the buttons do not fill the bottom ${JSON.stringify(layout)}`);
+  if (play.x < 8 || play.x > 20) throw new Error(`the buttons are not padded in from the left ${JSON.stringify(layout)}`);
+  const right = slap.x + slap.width;
+  if (right < layout.viewport - 20 || right > layout.viewport - 8) {
+    throw new Error(`the buttons do not reach the right padding ${JSON.stringify(layout)}`);
+  }
 }

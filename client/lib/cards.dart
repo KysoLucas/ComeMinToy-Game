@@ -217,7 +217,7 @@ class BoardSlot extends StatelessWidget {
                     ),
                     child: const Text('Board'),
                   )
-                : FaceCard(card: topCard),
+                : RepaintBoundary(child: FaceCard(card: topCard)),
           ),
         ],
       ),

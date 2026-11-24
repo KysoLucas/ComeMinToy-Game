@@ -58,6 +58,63 @@ void main() {
     expect(find.text('Board'), findsNothing);
     session.dispose();
   });
+
+  testWidgets('a finished game ranks players from fewest cards', (
+    tester,
+  ) async {
+    final session = Session(autostart: false);
+    session.view = RoomView(
+      code: 'TEST',
+      playerId: 'p0',
+      phase: 'won',
+      you: 0,
+      host: true,
+      banner: 'Cara WIN!',
+      turn: 0,
+      winner: 2,
+      pileCount: 0,
+      top: null,
+      said: null,
+      saidBy: null,
+      players: const [
+        Seat(
+          seat: 0,
+          name: 'Alice',
+          connected: true,
+          host: true,
+          count: 18,
+          slapped: false,
+        ),
+        Seat(
+          seat: 1,
+          name: 'Bob',
+          connected: true,
+          host: false,
+          count: 9,
+          slapped: false,
+        ),
+        Seat(
+          seat: 2,
+          name: 'Cara',
+          connected: true,
+          host: false,
+          count: 0,
+          slapped: false,
+        ),
+      ],
+    );
+    await tester.pumpWidget(_table(session));
+    await tester.pump();
+
+    expect(find.text('Cara wins'), findsOneWidget);
+    expect(find.text('Slap now'), findsNothing);
+    expect(find.bySemanticsLabel('Scoreboard'), findsOneWidget);
+    expect(find.bySemanticsLabel('1 Cara 0'), findsOneWidget);
+    expect(find.bySemanticsLabel('2 Bob 9'), findsOneWidget);
+    expect(find.bySemanticsLabel('3 Alice 18'), findsOneWidget);
+
+    session.dispose();
+  });
 }
 
 Widget _table(Session session) {

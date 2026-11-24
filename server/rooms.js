@@ -23,8 +23,8 @@ export function formatBanner(players, game) {
 const FIRST_TURN_MS = 5000;
 const LATER_TURN_MS = 3000;
 const AWAY_TURN_MS = 1000;
-const RESOLVE_MS = 900;
-const ROUND_GAP_MS = 2000;
+const RESOLVE_MS = 52;
+const ROUND_GAP_MS = 0;
 
 export function createRoomBook({
   now = () => Date.now(),

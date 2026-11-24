@@ -135,6 +135,8 @@ class Session extends ChangeNotifier {
 
   RoomView? view;
   String? error;
+  String? heldBanner;
+  Timer? _bannerTimer;
   String? pendingRoom;
   String name = '';
   bool connected = false;
@@ -285,6 +287,7 @@ class Session extends ChangeNotifier {
   void dispose() {
     _closed = true;
     _ping?.cancel();
+    _bannerTimer?.cancel();
     _socket?.dispose();
     super.dispose();
   }
@@ -326,6 +329,7 @@ class Session extends ChangeNotifier {
     view = next;
     error = null;
     entering = false;
+    _holdBanner(next.banner);
     if (next.playerId != null && next.code.isNotEmpty) {
       memory.code = next.code;
       memory.playerId = next.playerId;
@@ -335,6 +339,20 @@ class Session extends ChangeNotifier {
     _remain = next.remainMs;
     _remainAt = DateTime.now();
     notifyListeners();
+  }
+
+  void _holdBanner(String? banner) {
+    if (banner == null) return;
+    if (!banner.contains('Slapped the Wrong Card') &&
+        !banner.contains('too slow')) {
+      return;
+    }
+    heldBanner = banner;
+    _bannerTimer?.cancel();
+    _bannerTimer = Timer(const Duration(milliseconds: 900), () {
+      heldBanner = null;
+      if (!_closed) notifyListeners();
+    });
   }
 
   void _armPing() {
