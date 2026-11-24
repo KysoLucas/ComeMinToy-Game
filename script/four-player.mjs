@@ -77,6 +77,32 @@ try {
     throw new Error(`the north seat moved ${JSON.stringify({ before, after })}`);
   }
   await alice.page.screenshot({ path: path.join(shots, "slapjack-four-dealt.png") });
+
+  await alice.page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+  await alice.page.waitForSelector("flutter-view, flt-glass-pane", { timeout: 60000 });
+  const placeholder = await alice.page.$("flt-semantics-placeholder");
+  if (placeholder) await placeholder.click();
+  await waitFor(alice.page, "South Alice");
+  await waitFor(alice.page, `Room ${code}`);
+  await alice.page.screenshot({ path: path.join(shots, "slapjack-refresh.png") });
+  await click(alice.page, "Leave");
+  await waitFor(alice.page, "Leave this room?");
+  await alice.page.screenshot({ path: path.join(shots, "slapjack-leave.png") });
+  await click(alice.page, "Stay");
+  const stayStarted = Date.now();
+  while (Date.now() - stayStarted < 5000) {
+    const stayed = await text(alice.page);
+    if (stayed.includes("South Alice") && !stayed.includes("Leave this room?")) break;
+    await delay(200);
+  }
+  const stayed = await text(alice.page);
+  if (!stayed.includes("South Alice") || stayed.includes("Leave this room?")) {
+    throw new Error(`Stay did not close the prompt\n${stayed}`);
+  }
+  await click(alice.page, "Leave");
+  await click(alice.page, "Sure");
+  await waitFor(alice.page, "Create room");
+
   console.log(JSON.stringify({
     ok: true,
     code,

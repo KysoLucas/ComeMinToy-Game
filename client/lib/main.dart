@@ -40,19 +40,19 @@ class GameScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          SafeArea(
-            child: ListenableBuilder(
-              listenable: session,
-              builder: (context, _) {
-                final view = session.view;
-                final page = view == null
-                    ? HomeForm(session: session)
-                    : view.phase == 'lobby'
-                    ? WaitingRoom(session: session)
-                    : TablePage(session: session);
-                return Column(
+      body: ListenableBuilder(
+        listenable: session,
+        builder: (context, _) {
+          final view = session.view;
+          final page = view == null
+              ? HomeForm(session: session)
+              : view.phase == 'lobby'
+              ? WaitingRoom(session: session)
+              : TablePage(session: session);
+          return Stack(
+            children: [
+              SafeArea(
+                child: Column(
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
@@ -94,38 +94,38 @@ class GameScreen extends StatelessWidget {
                       ),
                     Expanded(child: page),
                   ],
-                );
-              },
-            ),
-          ),
-          if (session.confirmLeave)
-            ColoredBox(
-              color: const Color(0xCC000000),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Leave this room?',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: session.leave,
-                      child: const Text('Sure'),
-                    ),
-                    TextButton(
-                      onPressed: session.cancelLeave,
-                      child: const Text('Stay'),
-                    ),
-                  ],
                 ),
               ),
-            ),
-        ],
+              if (session.confirmLeave)
+                ColoredBox(
+                  color: const Color(0xCC000000),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Leave this room?',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: session.leave,
+                          child: const Text('Sure'),
+                        ),
+                        TextButton(
+                          onPressed: session.cancelLeave,
+                          child: const Text('Stay'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
