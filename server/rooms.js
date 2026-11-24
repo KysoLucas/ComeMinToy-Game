@@ -48,13 +48,40 @@ export function createRoomBook({
 
   function present(room, playerId) {
     const you = room.players.findIndex((player) => player.id === playerId);
+    const viewer = room.players[you];
+    if (viewer?.waiting) {
+      return {
+        code: room.code,
+        playerId,
+        phase: "lobby",
+        you: 0,
+        host: false,
+        banner: null,
+        turn: null,
+        winner: null,
+        pileCount: 0,
+        top: null,
+        said: null,
+        saidBy: null,
+        players: [{
+          seat: 0,
+          name: "Waiting",
+          connected: true,
+          host: false,
+          count: 0,
+          slapped: false,
+          waiting: true,
+        }],
+        remainMs: null,
+      };
+    }
     const seen = room.game ? viewGame(room.game) : null;
     return {
       code: room.code,
       playerId,
       phase: seen ? seen.phase : "lobby",
       you,
-      host: room.players[you]?.id === room.hostId,
+      host: viewer?.id === room.hostId,
       banner: formatBanner(room.players, room.game),
       turn: seen ? seen.turn : null,
       winner: seen ? seen.winner : null,
@@ -256,6 +283,11 @@ export function createRoomBook({
     sockets.delete(socketId);
     player.connected = false;
     player.socketId = null;
+    if (!room.players.some((item) => item.connected)) {
+      disarm(room);
+      rooms.delete(room.code);
+      return { ok: true, code: null };
+    }
     if (room.game?.phase === "play") arm(room);
     if (!room.game || room.game.phase === "won") {
       disarm(room);

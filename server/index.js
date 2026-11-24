@@ -38,9 +38,31 @@ function reply(ack, body) {
   if (typeof ack === "function") ack(body);
 }
 
+const MAX_SOCKETS = 200;
+const MAX_PER_ADDRESS = 8;
+const MAX_EVENTS_PER_SECOND = 20;
+const EVENT_WINDOW_MS = 1000;
+const MAX_PAYLOAD = 2048;
+
 function readBody(payload) {
-  if (payload && typeof payload === "object") return payload;
-  return {};
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {};
+  const body = {};
+  for (const key of ["name", "code", "playerId", "t"]) {
+    if (payload[key] == null) continue;
+    const value = payload[key];
+    if (typeof value === "string") body[key] = value.slice(0, 64);
+    else if (typeof value === "number" && Number.isFinite(value)) body[key] = value;
+  }
+  return body;
+}
+
+function clientAddress(socket) {
+  const forwarded = socket.handshake.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.length > 0) {
+    const first = forwarded.split(",")[0].trim();
+    if (first) return first.slice(0, 80);
+  }
+  return String(socket.handshake.address ?? "");
 }
 
 function push(io, book, code) {
@@ -94,8 +116,40 @@ function serve(req, res, webRoot) {
   res.writeHead(404).end();
 }
 
-function wire(io, book) {
+function wire(io, book, open) {
+  io.use((socket, next) => {
+    const address = clientAddress(socket);
+    let same = 0;
+    for (const item of open.values()) {
+      if (item.address === address) same += 1;
+    }
+    if (open.size >= MAX_SOCKETS || same >= MAX_PER_ADDRESS) {
+      next(new Error("Too many connections"));
+      return;
+    }
+    open.set(socket.id, { address, stamps: [] });
+    socket.once("disconnect", () => open.delete(socket.id));
+    next();
+  });
+
   io.on("connection", (socket) => {
+    socket.use((_packet, next) => {
+      const slot = open.get(socket.id);
+      if (!slot) {
+        next();
+        return;
+      }
+      const now = Date.now();
+      slot.stamps = slot.stamps.filter((stamp) => now - stamp < EVENT_WINDOW_MS);
+      if (slot.stamps.length >= MAX_EVENTS_PER_SECOND) {
+        socket.disconnect(true);
+        next(new Error("Slow down"));
+        return;
+      }
+      slot.stamps.push(now);
+      next();
+    });
+
     const finish = (ack, result, okBody) => {
       reply(ack, result.ok ? okBody : { ok: false, error: result.error });
       if (result.ok && result.code) push(io, book, result.code);
@@ -152,11 +206,13 @@ export function createGameServer({ webRoot = defaultWebRoot } = {}) {
     },
   });
   const server = createServer((req, res) => serve(req, res, webRoot));
-  const io = new Server(server, { transports: ["websocket"] });
-  const hosted = new Server(server, { path: "/api/socket/socket.io", transports: ["websocket"] });
+  const limits = { transports: ["websocket"], maxHttpBufferSize: MAX_PAYLOAD };
+  const open = new Map();
+  const io = new Server(server, limits);
+  const hosted = new Server(server, { ...limits, path: "/api/socket/socket.io" });
   sockets.push(io, hosted);
-  wire(io, book);
-  wire(hosted, book);
+  wire(io, book, open);
+  wire(hosted, book, open);
 
   return { server, sockets, book };
 }

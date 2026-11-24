@@ -125,6 +125,65 @@ test("two sockets share a room, a ping, and one pile", async () => {
   }
 });
 
+test("one address cannot open an endless number of sockets", async () => {
+  const running = await start({ port: 0, host: "127.0.0.1" });
+  const sockets = [];
+  try {
+    for (let i = 0; i < 8; i += 1) sockets.push(await connect(running.port));
+    const extra = io(`http://127.0.0.1:${running.port}`, {
+      transports: ["websocket"],
+      forceNew: true,
+      reconnection: false,
+      timeout: 2000,
+    });
+    const result = await new Promise((resolve) => {
+      extra.once("connect", () => resolve("open"));
+      extra.once("connect_error", (error) => resolve(error.message));
+    });
+    extra.close();
+    assert.equal(result, "Too many connections");
+  } finally {
+    for (const socket of sockets) socket.close();
+    await running.close();
+  }
+});
+
+test("a socket that floods events is closed", async () => {
+  const running = await start({ port: 0, host: "127.0.0.1" });
+  const socket = await connect(running.port);
+  try {
+    const closed = new Promise((resolve) => socket.once("disconnect", () => resolve("closed")));
+    for (let i = 0; i < 40; i += 1) socket.emit("net:ping", { t: i });
+    const result = await Promise.race([
+      closed,
+      new Promise((resolve) => setTimeout(() => resolve("open"), 1000)),
+    ]);
+    assert.equal(result, "closed");
+  } finally {
+    socket.close();
+    await running.close();
+  }
+});
+
+test("a huge payload cannot create a room", async () => {
+  const running = await start({ port: 0, host: "127.0.0.1" });
+  const socket = await connect(running.port);
+  try {
+    const closed = new Promise((resolve) => socket.once("disconnect", () => resolve("closed")));
+    socket.emit("room:create", { name: "A".repeat(5000) });
+    const result = await Promise.race([
+      closed,
+      ack(socket, "room:create", { name: "Ada" }).then((body) => body),
+      new Promise((resolve) => setTimeout(() => resolve("open"), 1000)),
+    ]);
+    assert.notEqual(result?.ok, true);
+    assert.notEqual(result, "open");
+  } finally {
+    socket.close();
+    await running.close();
+  }
+});
+
 test("the hosted socket path stays open for two players", async () => {
   const running = await start({ port: 0, host: "127.0.0.1" });
   const alice = await connect(running.port, "/api/socket/socket.io");

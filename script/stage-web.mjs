@@ -8,3 +8,4 @@ const dest = path.join(root, "public");
 
 await rm(dest, { recursive: true, force: true });
 await cp(from, dest, { recursive: true });
+await rm(path.join(dest, "canvaskit"), { recursive: true, force: true });

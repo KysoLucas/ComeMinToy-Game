@@ -51,14 +51,47 @@ test("a nameless visitor holds a seat the others can see", () => {
   const host = book.createRoom("s0", "Ada");
   const held = book.holdSeat("s1", { code: host.code });
   assert.equal(held.ok, true);
-  const waiting = book.snapshots(host.code)[0].view;
-  assert.equal(waiting.players[1].waiting, true);
-  assert.equal(waiting.players[1].name, "Waiting");
+  const views = book.snapshots(host.code);
+  const hostView = views.find((item) => item.socketId === "s0").view;
+  const heldView = views.find((item) => item.socketId === "s1").view;
+  assert.equal(hostView.players[1].waiting, true);
+  assert.equal(hostView.players[1].name, "Waiting");
+  assert.equal(heldView.players.length, 1);
+  assert.equal(heldView.players[0].name, "Waiting");
+  assert.equal(JSON.stringify(heldView).includes("Ada"), false);
   assert.equal(book.joinRoom("s1", { code: host.code, name: "Bea" }).ok, true);
   const named = book.snapshots(host.code)[0].view;
   assert.equal(named.players.length, 2);
   assert.equal(named.players[1].name, "Bea");
   assert.equal(named.players[1].waiting, false);
+});
+
+test("a game is removed when the last player leaves", () => {
+  let now = 0;
+  const jobs = [];
+  const book = createRoomBook({
+    now: () => now,
+    schedule(fn, ms) {
+      const job = { fn, at: now + ms, dead: false };
+      jobs.push(job);
+      return job;
+    },
+    clear(job) {
+      if (job) job.dead = true;
+    },
+  });
+  const host = book.createRoom("s0", "Ada");
+  book.joinRoom("s1", { code: host.code, name: "Bea" });
+  assert.equal(book.startGame("s0").ok, true);
+  book.disconnect("s0");
+  assert.equal(book.snapshots(host.code).length, 1);
+  assert.equal(book.disconnect("s1").code, null);
+  assert.equal(book.snapshots(host.code).length, 0);
+  now += 10_000;
+  for (const job of jobs) {
+    if (!job.dead && job.at <= now) job.fn();
+  }
+  assert.equal(book.joinRoom("s2", { code: host.code, name: "Cy" }).error, "Room not found");
 });
 
 test("a blank name cannot open or join a room", () => {
