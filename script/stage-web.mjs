@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const from = path.join(root, "client/build/web");
-const dist = path.join(root, "dist");
+const dest = path.join(root, "public");
 
-await rm(dist, { recursive: true, force: true });
-await cp(from, dist, { recursive: true });
+await rm(dest, { recursive: true, force: true });
+await cp(from, dest, { recursive: true });

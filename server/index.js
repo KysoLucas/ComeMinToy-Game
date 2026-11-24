@@ -9,7 +9,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 function findWebRoot() {
   if (process.env.WEB_ROOT) return process.env.WEB_ROOT;
-  const candidates = ["../dist", "../client/build/web"].map((dir) => path.resolve(here, dir));
+  const candidates = ["../public", "../client/build/web"].map((dir) => path.resolve(here, dir));
   return candidates.find((dir) => existsSync(path.join(dir, "index.html"))) ?? candidates.at(-1);
 }
 
@@ -94,15 +94,7 @@ function serve(req, res, webRoot) {
   res.writeHead(404).end();
 }
 
-export function start({ port = 0, host = "0.0.0.0", webRoot = defaultWebRoot } = {}) {
-  const book = createRoomBook({
-    onChange(code) {
-      push(io, book, code);
-    },
-  });
-  const server = createServer((req, res) => serve(req, res, webRoot));
-  const io = new Server(server);
-
+function wire(io, book) {
   io.on("connection", (socket) => {
     const finish = (ack, result, okBody) => {
       reply(ack, result.ok ? okBody : { ok: false, error: result.error });
@@ -150,6 +142,27 @@ export function start({ port = 0, host = "0.0.0.0", webRoot = defaultWebRoot } =
       if (result.code) push(io, book, result.code);
     });
   });
+}
+
+export function createGameServer({ webRoot = defaultWebRoot } = {}) {
+  const sockets = [];
+  const book = createRoomBook({
+    onChange(code) {
+      for (const io of sockets) push(io, book, code);
+    },
+  });
+  const server = createServer((req, res) => serve(req, res, webRoot));
+  const io = new Server(server);
+  const hosted = new Server(server, { path: "/api/socket/socket.io" });
+  sockets.push(io, hosted);
+  wire(io, book);
+  wire(hosted, book);
+
+  return { server, sockets, book };
+}
+
+export function start({ port = 0, host = "0.0.0.0", webRoot = defaultWebRoot } = {}) {
+  const { server, sockets } = createGameServer({ webRoot });
 
   return new Promise((resolve) => {
     server.listen(port, host, () => {
@@ -158,7 +171,16 @@ export function start({ port = 0, host = "0.0.0.0", webRoot = defaultWebRoot } =
         port: typeof address === "object" && address ? address.port : port,
         close() {
           return new Promise((done) => {
-            io.close(() => server.close(() => done()));
+            const rest = [...sockets];
+            const step = () => {
+              const io = rest.pop();
+              if (!io) {
+                server.close(() => done());
+                return;
+              }
+              io.close(step);
+            };
+            step();
           });
         },
       });
