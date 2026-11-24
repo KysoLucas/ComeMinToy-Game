@@ -338,9 +338,10 @@ export function createRoomBook({
       const result = apply(socketId, slap);
       if (!result.ok) return result;
       const room = result.room;
+      if (room.holding) return result;
       if (room.game.phase === "resolve") {
-        if (!room.holding) scheduleResolve(room);
-      } else {
+        scheduleResolve(room);
+      } else if (room.game.phase === "slap") {
         disarm(room);
       }
       return result;

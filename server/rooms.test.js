@@ -171,6 +171,54 @@ test("a slap holds the pile, then the loser takes it, then the next round waits"
   assert.equal(next.remainMs, 3000);
 });
 
+test("a slap while the pile is scooped still starts the next turn clock", () => {
+  let now = 20_000;
+  const jobs = [];
+  const book = createRoomBook({
+    now: () => now,
+    schedule(fn, ms) {
+      const job = { fn, at: now + ms, dead: false, ran: false };
+      jobs.push(job);
+      return job;
+    },
+    clear(job) {
+      if (job) job.dead = true;
+    },
+  });
+  function runDue() {
+    for (const job of [...jobs]) {
+      if (job.dead || job.ran || job.at > now) continue;
+      job.ran = true;
+      job.fn();
+    }
+  }
+  const host = book.createRoom("s0", "test");
+  book.joinRoom("s1", { code: host.code, name: "test2" });
+  book.startGame("s0");
+  assert.equal(book.playCard("s0").ok, true);
+  assert.equal(book.slapCard("s1").ok, true);
+  now += 900;
+  runDue();
+  const scooped = book.snapshots(host.code)[0].view;
+  assert.equal(scooped.phase, "gather");
+  assert.equal(scooped.pileCount, 0);
+  assert.match(scooped.banner, /Slapped the Wrong Card|too slow/);
+  assert.equal(book.slapCard("s0").ok, true);
+  assert.equal(book.slapCard("s1").ok, true);
+  const held = book.snapshots(host.code)[0].view;
+  assert.equal(held.phase, "gather");
+  assert.equal(held.remainMs, null);
+  assert.equal(book.playCard(held.turn === 0 ? "s0" : "s1").error, "Wait for the slap");
+  now += 2000;
+  runDue();
+  const next = book.snapshots(host.code)[0].view;
+  assert.equal(next.phase, "play");
+  assert.equal(next.banner, null);
+  assert.equal(next.pileCount, 0);
+  assert.equal(next.remainMs, 3000);
+  assert.equal(book.playCard(next.turn === 0 ? "s0" : "s1").ok, true);
+});
+
 test("a fifth player cannot sit down", () => {
   const book = createRoomBook();
   const host = book.createRoom("s0", "Ada");
