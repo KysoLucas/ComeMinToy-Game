@@ -162,7 +162,7 @@ class Session extends ChangeNotifier {
     final socket = io.io(
       _origin ?? _pageOrigin(),
       io.OptionBuilder()
-          .setTransports(['polling', 'websocket'])
+          .setTransports(['websocket'])
           .disableAutoConnect()
           .build(),
     );

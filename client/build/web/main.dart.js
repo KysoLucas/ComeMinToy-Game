@@ -80267,7 +80267,7 @@ if(r!=null&&s.ax)return A.j(r)+" ms"
 if(!s.ax&&s.f)return"Offline"
 return"Connecting"},
 rC(){var s,r,q,p,o,n,m,l,k,j,i=this,h=null,g="query",f=A.aKa(),e=t.N,d=t.z,c=A.m(e,d)
-c.m(0,"transports",A.c(["polling","websocket"],t.s))
+c.m(0,"transports",A.c(["websocket"],t.s))
 c.m(0,"autoConnect",!1)
 s=A.eH(f)
 r=s.ghV()+"://"+s.gkV()+":"+s.gma()
