@@ -162,7 +162,7 @@ class Session extends ChangeNotifier {
     final options = io.OptionBuilder()
         .setTransports(['websocket'])
         .disableAutoConnect();
-    if (!_loopbackPage()) options.setPath('/api/socket');
+    if (!_loopbackPage()) options.setPath('/api/socket/socket.io');
     final socket = io.io(_origin ?? _pageOrigin(), options.build());
     _socket = socket;
     socket

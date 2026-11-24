@@ -1,3 +1,4 @@
+import http from "node:http";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { io } from "socket.io-client";
@@ -126,8 +127,8 @@ test("two sockets share a room, a ping, and one pile", async () => {
 
 test("the hosted socket path stays open for two players", async () => {
   const running = await start({ port: 0, host: "127.0.0.1" });
-  const alice = await connect(running.port, "/api/socket");
-  const bob = await connect(running.port, "/api/socket");
+  const alice = await connect(running.port, "/api/socket/socket.io");
+  const bob = await connect(running.port, "/api/socket/socket.io");
   try {
     const created = await ack(alice, "room:create", { name: "Alice" });
     assert.equal(created.ok, true);
@@ -140,6 +141,74 @@ test("the hosted socket path stays open for two players", async () => {
   } finally {
     alice.close();
     bob.close();
+    await running.close();
+  }
+});
+
+function hostProxy(targetPort) {
+  const proxy = http.createServer((req, res) => {
+    const path = req.url.replace(/^\/api\/socket/, "") || "/";
+    const forwarded = http.request(
+      { hostname: "127.0.0.1", port: targetPort, path, method: req.method, headers: req.headers },
+      (upstream) => {
+        res.writeHead(upstream.statusCode ?? 500, upstream.headers);
+        upstream.pipe(res);
+      },
+    );
+    forwarded.on("error", () => res.writeHead(502).end());
+    req.pipe(forwarded);
+  });
+  proxy.on("upgrade", (req, socket, head) => {
+    const path = req.url.replace(/^\/api\/socket/, "") || "/";
+    const forwarded = http.request({
+      hostname: "127.0.0.1",
+      port: targetPort,
+      path,
+      method: "GET",
+      headers: req.headers,
+    });
+    forwarded.on("upgrade", (upstreamResponse, upstream, upstreamHead) => {
+      const headers = Object.entries(upstreamResponse.headers)
+        .flatMap(([key, value]) => (Array.isArray(value) ? value : [value]).map((item) => `${key}: ${item}`))
+        .join("\r\n");
+      socket.write(
+        `HTTP/1.1 ${upstreamResponse.statusCode} ${upstreamResponse.statusMessage}\r\n${headers}\r\n\r\n`,
+      );
+      if (upstreamHead?.length) socket.write(upstreamHead);
+      upstream.pipe(socket);
+      socket.pipe(upstream);
+    });
+    forwarded.on("error", () => socket.destroy());
+    forwarded.end(head);
+  });
+  return new Promise((resolve) => {
+    proxy.listen(0, "127.0.0.1", () => {
+      const address = proxy.address();
+      resolve({
+        port: typeof address === "object" && address ? address.port : 0,
+        close: () => new Promise((done) => proxy.close(done)),
+      });
+    });
+  });
+}
+
+test("the hosted websocket still opens after the function prefix is stripped", async () => {
+  const running = await start({ port: 0, host: "127.0.0.1" });
+  const proxy = await hostProxy(running.port);
+  const alice = await connect(proxy.port, "/api/socket/socket.io");
+  const bob = await connect(proxy.port, "/api/socket/socket.io");
+  try {
+    const created = await ack(alice, "room:create", { name: "Alice" });
+    assert.equal(created.ok, true);
+    const joined = nextView(alice, (view) => view.players.length === 2);
+    assert.equal((await ack(bob, "room:join", { name: "Bob", code: created.code })).ok, true);
+    assert.equal((await joined).code, created.code);
+    assert.equal(alice.connected, true);
+    assert.equal(bob.connected, true);
+  } finally {
+    alice.close();
+    bob.close();
+    await proxy.close();
     await running.close();
   }
 });
