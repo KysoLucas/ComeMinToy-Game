@@ -184,15 +184,9 @@ class FaceCard extends StatelessWidget {
 }
 
 class BoardSlot extends StatelessWidget {
-  const BoardSlot({
-    super.key,
-    required this.top,
-    required this.pileCount,
-    this.cardKey,
-  });
+  const BoardSlot({super.key, required this.top, this.cardKey});
 
   final CardFace? top;
-  final int pileCount;
   final Key? cardKey;
 
   @override
@@ -222,11 +216,6 @@ class BoardSlot extends StatelessWidget {
                     child: const Text('Board'),
                   )
                 : FaceCard(card: topCard),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Pile $pileCount',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
         ],
       ),

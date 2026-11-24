@@ -40,7 +40,7 @@ export function newGame(playerCount, options = {}) {
 
 export function play(state, seat) {
   if (state.phase === "won") return { state, error: "Game over" };
-  if (state.phase === "slap") return { state, error: "Wait for the slap" };
+  if (state.phase !== "play") return { state, error: "Wait for the slap" };
   if (!Number.isInteger(seat) || seat < 0 || seat >= state.hands.length) {
     return { state, error: "Wait for the next game" };
   }
@@ -66,6 +66,7 @@ export function play(state, seat) {
 
 export function slap(state, seat) {
   if (state.phase === "won") return { state, error: "Game over" };
+  if (state.phase === "resolve" || state.phase === "gather") return { state };
   if (state.table.length === 0) return { state, error: "No card to slap" };
   if (!Number.isInteger(seat) || seat < 0 || seat >= state.hands.length) {
     return { state, error: "Wait for the next game" };
@@ -76,13 +77,25 @@ export function slap(state, seat) {
   slaps[seat] = true;
   const top = state.table[state.table.length - 1];
   const match = state.counter != null && RANKS[state.counter] === top.rank;
-  if (!match) return { state: givePile(state, seat, "wrong") };
+  if (!match) return { state: holdLoser(state, slaps, seat, "wrong") };
 
   const marked = { ...state, slaps };
   const stillOut = slaps.filter((done) => !done).length;
   if (stillOut !== 1) return { state: marked };
   const slow = slaps.findIndex((done) => !done);
-  return { state: givePile(marked, slow, "late") };
+  return { state: holdLoser(marked, slaps, slow, "late") };
+}
+
+export function settle(state) {
+  if (state.phase !== "resolve" || !state.notice) return state;
+  const given = givePile(state, state.notice.seat, state.notice.kind);
+  return { ...given, phase: "gather" };
+}
+
+export function resume(state) {
+  if (state.phase !== "gather") return state;
+  if (state.winner != null) return { ...state, phase: "won", notice: null };
+  return { ...state, phase: "play", notice: null };
 }
 
 export function viewGame(state) {
@@ -101,6 +114,16 @@ export function viewGame(state) {
     saidBy: pending ? (state.turn - 1 + count) % count : null,
     counts: state.hands.map((hand) => hand.length),
     slaps: state.slaps.slice(),
+  };
+}
+
+function holdLoser(state, slaps, loser, kind) {
+  return {
+    ...state,
+    slaps,
+    phase: "resolve",
+    winner: null,
+    notice: { kind, seat: loser },
   };
 }
 

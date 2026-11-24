@@ -297,19 +297,36 @@ class _Deal {
   final int heldPile;
 }
 
+class _Gather {
+  const _Gather({
+    required this.seat,
+    required this.top,
+    required this.heldCount,
+  });
+
+  final int seat;
+  final CardFace top;
+  final int heldCount;
+}
+
 class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
   final _boardKey = GlobalKey();
   final _layerKey = GlobalKey();
   final _seatKeys = <int, GlobalKey>{};
   late final AnimationController _motion;
-  late final AnimationController _slapMotion;
+  late final AnimationController _gatherMotion;
+  final Map<int, AnimationController> _slaps = {};
+  final Set<int> _armSlaps = {};
+  final Set<int> _dropSlaps = {};
   Timer? _clock;
   String? _seen;
   RoomView? _prior;
   _Deal? _deal;
-  int? _slapSeat;
+  _Gather? _gather;
   bool _armDeal = false;
-  bool _armSlap = false;
+  bool _armGather = false;
+  int? _autoTurn;
+  int? _autoPile;
 
   GlobalKey _seatKey(int seat) => _seatKeys.putIfAbsent(seat, GlobalKey.new);
 
@@ -320,15 +337,16 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 520),
     );
-    _slapMotion = AnimationController(
+    _gatherMotion = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
+      duration: const Duration(milliseconds: 800),
     );
     _clock = Timer.periodic(const Duration(milliseconds: 200), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
+      _dealIfDue();
       setState(() {});
     });
     _motion.addStatusListener((status) {
@@ -336,9 +354,9 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
         setState(() => _deal = null);
       }
     });
-    _slapMotion.addStatusListener((status) {
+    _gatherMotion.addStatusListener((status) {
       if (status == AnimationStatus.completed && mounted) {
-        setState(() => _slapSeat = null);
+        setState(() => _gather = null);
       }
     });
   }
@@ -347,8 +365,25 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
   void dispose() {
     _clock?.cancel();
     _motion.dispose();
-    _slapMotion.dispose();
+    _gatherMotion.dispose();
+    for (final motion in _slaps.values) {
+      motion.dispose();
+    }
     super.dispose();
+  }
+
+  void _dealIfDue() {
+    final view = widget.session.view;
+    if (view == null || view.phase != 'play' || view.turn != view.you) {
+      _autoTurn = null;
+      return;
+    }
+    final left = widget.session.remainMs;
+    if (left == null || left > 0 || !widget.session.connected) return;
+    if (_autoTurn == view.turn && _autoPile == view.pileCount) return;
+    _autoTurn = view.turn;
+    _autoPile = view.pileCount;
+    widget.session.dealIfDue();
   }
 
   void _watch(RoomView view) {
@@ -361,10 +396,30 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
     for (final seat in view.players) {
       final before = prior.players.where((item) => item.seat == seat.seat);
       final was = before.isEmpty ? false : before.first.slapped;
-      if (seat.slapped && !was) {
-        _slapSeat = seat.seat;
-        _armSlap = true;
+      if (seat.slapped && !was && !_slaps.containsKey(seat.seat)) {
+        _armSlaps.add(seat.seat);
       }
+      if (!seat.slapped && _slaps.containsKey(seat.seat)) {
+        _dropSlaps.add(seat.seat);
+      }
+    }
+    if (prior.pileCount > 0 && view.pileCount == 0 && prior.top != null) {
+      final taker = _taker(prior, view);
+      if (taker != null) {
+        Seat? source;
+        for (final seat in prior.players) {
+          if (seat.seat == taker) source = seat;
+        }
+        _gather = _Gather(
+          seat: taker,
+          top: prior.top!,
+          heldCount: source?.count ?? 0,
+        );
+        _armGather = true;
+      }
+      _deal = null;
+      _armDeal = false;
+      return;
     }
     final from = _dealtBy(prior, view);
     final card = view.top;
@@ -392,39 +447,71 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
     final view = widget.session.view;
     if (view == null) return const SizedBox.shrink();
     _watch(view);
-    if (_armDeal || _armSlap) {
+    if (_armDeal ||
+        _armGather ||
+        _armSlaps.isNotEmpty ||
+        _dropSlaps.isNotEmpty) {
       final deal = _armDeal;
-      final slap = _armSlap;
+      final gather = _armGather;
+      final arm = Set<int>.of(_armSlaps);
+      final drop = Set<int>.of(_dropSlaps);
       _armDeal = false;
-      _armSlap = false;
+      _armGather = false;
+      _armSlaps.clear();
+      _dropSlaps.clear();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (deal && _deal != null) _motion.forward(from: 0);
-        if (slap && _slapSeat != null) _slapMotion.forward(from: 0);
+        if (gather && _gather != null) _gatherMotion.forward(from: 0);
+        var changed = false;
+        for (final seat in arm) {
+          if (_slaps.containsKey(seat)) continue;
+          final motion = AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 520),
+          );
+          _slaps[seat] = motion;
+          motion.forward(from: 0);
+          changed = true;
+        }
+        for (final seat in drop) {
+          final motion = _slaps.remove(seat);
+          if (motion == null) continue;
+          motion.dispose();
+          changed = true;
+        }
+        if (changed) setState(() {});
       });
     }
     final deal = _deal;
+    final gather = _gather;
     final places = _places(view);
+    final toast = _slapMessage(view.banner);
     return Stack(
       key: _layerKey,
       children: [
         Column(
           children: [
-            _compass(view, places, 'North', deal),
+            _compass(view, places, 'North', deal, gather),
             Expanded(
               child: Row(
                 children: [
-                  _compass(view, places, 'West', deal),
+                  _compass(view, places, 'West', deal, gather),
                   Expanded(child: _board(view, deal)),
-                  _compass(view, places, 'East', deal),
+                  _compass(view, places, 'East', deal, gather),
                 ],
               ),
             ),
-            _south(view, deal),
+            _south(view, deal, gather),
           ],
         ),
         if (deal != null) _flight(deal),
-        if (_slapSeat != null) _slapHand(view, _slapSeat!),
+        if (gather != null) _scoop(gather),
+        Align(
+          alignment: const Alignment(0, -0.52),
+          child: _BumpToast(message: toast),
+        ),
+        for (final seat in _slaps.keys) _slapHand(view, seat, _slaps[seat]!),
       ],
     );
   }
@@ -436,23 +523,8 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
         children: [
           BoardSlot(
             top: deal == null ? view.top : deal.heldTop,
-            pileCount: deal == null ? view.pileCount : deal.heldPile,
             cardKey: _boardKey,
           ),
-          if (view.banner != null) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                view.banner!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -463,6 +535,7 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
     Map<String, Seat?> places,
     String place,
     _Deal? deal,
+    _Gather? gather,
   ) {
     final seat = places[place];
     final wide = place == 'West' || place == 'East';
@@ -471,7 +544,7 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
         : _SeatStack(
             seat: seat,
             place: place,
-            count: deal?.seat == seat.seat ? deal!.heldCount : seat.count,
+            count: _shownCount(seat, deal, gather),
             active: view.phase == 'play' && view.turn == seat.seat,
             remain: widget.session.remainMs,
             said: view.saidBy == seat.seat ? view.said : null,
@@ -481,13 +554,9 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
     return SizedBox(width: 136, child: Center(child: body));
   }
 
-  Widget _south(RoomView view, _Deal? deal) {
+  Widget _south(RoomView view, _Deal? deal, _Gather? gather) {
     final mine = view.mine;
-    final count = mine == null
-        ? 0
-        : deal?.seat == view.you
-        ? deal!.heldCount
-        : mine.count;
+    final count = mine == null ? 0 : _shownCount(mine, deal, gather);
     final yourTurn = view.phase == 'play' && view.turn == view.you;
     return SizedBox(
       height: 196,
@@ -600,7 +669,55 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _slapHand(RoomView view, int seat) {
+  Widget _scoop(_Gather gather) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _gatherMotion,
+          builder: (context, _) {
+            final from = _center(_boardKey);
+            final to = _center(_seatKey(gather.seat));
+            if (from == null || to == null) return const SizedBox.shrink();
+            final t = Curves.easeInOut.transform(_gatherMotion.value);
+            final center = Offset.lerp(from, to, t)!;
+            final scale = 1 - (0.46 * t);
+            return Stack(
+              children: [
+                Positioned(
+                  left: center.dx - 55,
+                  top: center.dy - 77,
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Semantics(
+                      label: 'Gathering',
+                      container: true,
+                      child: ExcludeSemantics(
+                        child: Stack(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(left: 14, top: 10),
+                              child: CardBack(width: 110, height: 154),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 7, top: 5),
+                              child: CardBack(width: 110, height: 154),
+                            ),
+                            FaceCard(card: gather.top),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _slapHand(RoomView view, int seat, AnimationController motion) {
     final place = _places(view).entries
         .where((entry) => entry.value?.seat == seat)
         .map((entry) => entry.key)
@@ -614,28 +731,38 @@ class _TablePageState extends State<TablePage> with TickerProviderStateMixin {
     return Positioned.fill(
       child: IgnorePointer(
         child: AnimatedBuilder(
-          animation: _slapMotion,
+          animation: motion,
           builder: (context, _) {
             final from = _center(_seatKey(seat));
             final to = _center(_boardKey);
             if (from == null || to == null) return const SizedBox.shrink();
-            final t = Curves.easeOut.transform(_slapMotion.value);
+            final t = Curves.easeOut.transform(motion.value);
             final center = Offset.lerp(from, to, t)!;
             return Stack(
               children: [
                 Positioned(
-                  left: center.dx - 28,
-                  top: center.dy - 28,
+                  left: center.dx - 42,
+                  top: center.dy - 42,
                   child: Semantics(
                     label: 'Slapping',
                     container: true,
                     child: ExcludeSemantics(
                       child: Transform.rotate(
                         angle: turns * 3.1415926535 * 2,
-                        child: const Icon(
-                          Icons.front_hand,
-                          size: 56,
-                          color: Color(0xFFF7F1E3),
+                        child: const Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Icon(
+                              Icons.front_hand,
+                              size: 86,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                            Icon(
+                              Icons.front_hand,
+                              size: 74,
+                              color: Color(0xFFFFB74D),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -863,6 +990,143 @@ String _place(int seat, int you, int count) {
   if (count == 2) return rel == 0 ? 'South' : 'North';
   if (count == 3) return const ['South', 'West', 'East'][rel];
   return const ['South', 'West', 'North', 'East'][rel];
+}
+
+int _shownCount(Seat seat, _Deal? deal, _Gather? gather) {
+  if (deal?.seat == seat.seat) return deal!.heldCount;
+  if (gather?.seat == seat.seat) return gather!.heldCount;
+  return seat.count;
+}
+
+int? _taker(RoomView before, RoomView after) {
+  int? seat;
+  for (final next in after.players) {
+    Seat? prior;
+    for (final item in before.players) {
+      if (item.seat == next.seat) prior = item;
+    }
+    if (prior != null && next.count >= prior.count + before.pileCount) {
+      if (seat != null) return null;
+      seat = next.seat;
+    }
+  }
+  return seat;
+}
+
+String? _slapMessage(String? banner) {
+  if (banner == null) return null;
+  if (banner.contains('Slapped the Wrong Card') ||
+      banner.contains('too slow')) {
+    return banner;
+  }
+  return null;
+}
+
+class _BumpToast extends StatefulWidget {
+  const _BumpToast({required this.message});
+
+  final String? message;
+
+  @override
+  State<_BumpToast> createState() => _BumpToastState();
+}
+
+class _BumpToastState extends State<_BumpToast>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pop;
+  String? _shown;
+
+  @override
+  void initState() {
+    super.initState();
+    _pop = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+    _shown = widget.message;
+    if (_shown != null) _pop.forward(from: 0);
+  }
+
+  @override
+  void didUpdateWidget(_BumpToast oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.message == null) {
+      _shown = null;
+      return;
+    }
+    if (widget.message != _shown) {
+      _shown = widget.message;
+      _pop.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final message = widget.message;
+    if (message == null) return const SizedBox.shrink();
+    final scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.15,
+          end: 1.12,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 62,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.12,
+          end: 0.96,
+        ).chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 20,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.96,
+          end: 1,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 18,
+      ),
+    ]).animate(_pop);
+    return IgnorePointer(
+      child: ScaleTransition(
+        scale: scale,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 300),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F1E3),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0xAA000000),
+                  blurRadius: 16,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF1A1A1A),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 String _signature(RoomView view) {

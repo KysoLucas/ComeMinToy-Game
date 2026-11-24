@@ -71,7 +71,7 @@ try {
   await dan.context.close();
   await waitFor(alice.page, "Offline");
   await alice.page.screenshot({ path: path.join(shots, "slapjack-four-offline.png") });
-  await waitFor(alice.page, "Pile 1", 12000);
+  await waitFor(alice.page, "Alice · 12 cards", 12000);
   const after = await seatBox(alice.page, "North Cara");
   if (Math.abs(before.y - after.y) > 3 || Math.abs(before.x - after.x) > 3) {
     throw new Error(`the north seat moved ${JSON.stringify({ before, after })}`);

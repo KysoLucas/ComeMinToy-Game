@@ -43,7 +43,8 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Pile 0'), findsOneWidget);
+    expect(find.text('Board'), findsOneWidget);
+    expect(find.textContaining('Pile'), findsNothing);
     expect(find.bySemanticsLabel('Dealing'), findsOneWidget);
     expect(find.byType(FaceCard), findsOneWidget);
     final start = tester.getTopLeft(find.byType(FaceCard));
@@ -53,7 +54,8 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.bySemanticsLabel('Dealing'), findsNothing);
-    expect(find.text('Pile 1'), findsOneWidget);
+    expect(find.byType(FaceCard), findsOneWidget);
+    expect(find.text('Board'), findsNothing);
     session.dispose();
   });
 }

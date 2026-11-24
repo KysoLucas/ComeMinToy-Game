@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dealHands, newGame, play, slap, viewGame } from "./rules.js";
+import { dealHands, newGame, play, resume, settle, slap, viewGame } from "./rules.js";
 
 const card = (rank, suit = "♠") => ({ rank, suit });
 
@@ -44,14 +44,21 @@ test("a wrong slap gives that player the pile and the next turn", () => {
   const missed = play(state, 0);
   assert.equal(missed.error, "Not your turn");
   assert.equal(missed.state, state);
-  const empty = slap(state, 1);
-  state = empty.state;
-  assert.equal(state.notice.kind, "wrong");
-  assert.equal(state.notice.seat, 1);
+  const held = slap(state, 1).state;
+  assert.equal(held.phase, "resolve");
+  assert.equal(held.slaps[1], true);
+  assert.equal(held.table.length, 1);
+  assert.equal(held.notice.kind, "wrong");
+  assert.equal(held.notice.seat, 1);
+  state = settle(held);
+  assert.equal(state.phase, "gather");
   assert.deepEqual(state.hands[1].map((item) => item.rank), ["4", "K"]);
   assert.equal(state.turn, 1);
   assert.equal(state.table.length, 0);
   assert.equal(state.counter, null);
+  state = resume(state);
+  assert.equal(state.phase, "play");
+  assert.equal(state.notice, null);
   const again = slap(state, 1);
   assert.equal(again.error, "No card to slap");
   assert.equal(again.state, state);
@@ -66,8 +73,12 @@ test("two players resolve a match when the other person slaps", () => {
   assert.equal(blocked.error, "Wait for the slap");
   assert.equal(blocked.state, state);
   state = slap(state, 1).state;
+  assert.equal(state.phase, "resolve");
+  assert.equal(state.slaps[1], true);
   assert.equal(state.notice.kind, "late");
   assert.equal(state.notice.seat, 0);
+  assert.equal(state.table.length, 1);
+  state = resume(settle(state));
   assert.equal(state.phase, "play");
   assert.deepEqual(state.hands[0].map((item) => item.rank), ["3", "A"]);
   assert.equal(state.table.length, 0);
@@ -86,6 +97,9 @@ test("a repeated slap does not move the pile", () => {
   assert.equal(again.state, before);
   assert.equal(before.table.length, 1);
   state = slap(before, 3).state;
+  assert.equal(state.phase, "resolve");
+  assert.equal(state.table.length, 1);
+  state = settle(state);
   assert.equal(state.notice.kind, "late");
   assert.equal(state.notice.seat, 0);
   assert.equal(state.table.length, 0);
@@ -98,6 +112,8 @@ test("three players resolve when everyone but one has slapped", () => {
   state = slap(state, 1).state;
   assert.equal(state.phase, "slap");
   state = slap(state, 2).state;
+  assert.equal(state.phase, "resolve");
+  state = settle(state);
   assert.equal(state.notice.seat, 0);
   assert.equal(state.notice.kind, "late");
 });
@@ -111,7 +127,10 @@ test("the last unmatched card wins, and a matched last card does not", () => {
   assert.equal(matched.phase, "slap");
   assert.equal(matched.winner, null);
   matched = slap(matched, 0).state;
-  assert.equal(matched.phase, "won");
+  assert.equal(matched.phase, "resolve");
+  matched = settle(matched);
+  assert.equal(matched.phase, "gather");
   assert.equal(matched.winner, 0);
   assert.equal(matched.hands[1].at(-1).rank, "A");
+  assert.equal(resume(matched).phase, "won");
 });

@@ -54,14 +54,17 @@ try {
   await click(alice, "Play");
   await waitFor(alice, "Dealing");
   await alice.screenshot({ path: path.join(shots, "slapjack-deal.png") });
-  await waitFor(alice, "Pile 1");
-  await waitFor(bob, "Pile 1");
+  await waitFor(alice, "Board ");
+  await waitFor(bob, "Board ");
   await mkdir(shots, { recursive: true });
   await alice.screenshot({ path: path.join(shots, "slapjack-alice.png") });
   await bob.screenshot({ path: path.join(shots, "slapjack-bob.png") });
   await click(bob, "Slap");
-  await waitFor(alice, "Pile 0");
-  await waitFor(bob, "Pile 0");
+  await waitFor(alice, "Slapping");
+  await alice.screenshot({ path: path.join(shots, "slapjack-slap.png") });
+  await waitFor(alice, "Gathering");
+  await delay(420);
+  await alice.screenshot({ path: path.join(shots, "slapjack-gather.png") });
   const after = await text(alice);
   if (!/too slow|Slapped the Wrong Card/.test(after)) {
     throw new Error(`slap did not resolve\n${after}`);

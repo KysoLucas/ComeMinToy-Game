@@ -240,7 +240,11 @@ class Session extends ChangeNotifier {
 
   void startGame() => _emit('game:start', const {});
 
+  bool _quietMiss = false;
+
   void playCard() => _emit('game:play', const {});
+
+  void dealIfDue() => _emit('game:play', const {}, quiet: true);
 
   void slap() => _emit('game:slap', const {});
 
@@ -273,21 +277,26 @@ class Session extends ChangeNotifier {
     super.dispose();
   }
 
-  void _emit(String event, Map<String, dynamic> payload) {
+  void _emit(String event, Map<String, dynamic> payload, {bool quiet = false}) {
     final socket = _socket;
     if (socket == null || !connected) {
       error = 'Offline';
       notifyListeners();
       return;
     }
+    _quietMiss = quiet;
     socket.emitWithAck(event, payload, ack: _onAck);
   }
 
   void _onAck(dynamic data) {
     if (_closed) return;
     final map = _asMap(data);
+    final quiet = _quietMiss;
+    _quietMiss = false;
     if (map['ok'] == true) {
       error = null;
+    } else if (quiet && map['error'] == 'Not your turn') {
+      return;
     } else {
       error = map['error'] as String? ?? 'Try again';
     }

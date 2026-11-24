@@ -1,5 +1,5 @@
 import { randomBytes, randomInt } from "node:crypto";
-import { newGame, play, slap, viewGame } from "./rules.js";
+import { newGame, play, resume, settle, slap, viewGame } from "./rules.js";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_ROOMS = 40;
@@ -23,6 +23,8 @@ export function formatBanner(players, game) {
 const FIRST_TURN_MS = 5000;
 const LATER_TURN_MS = 3000;
 const AWAY_TURN_MS = 1000;
+const RESOLVE_MS = 900;
+const ROUND_GAP_MS = 2000;
 
 export function createRoomBook({
   now = () => Date.now(),
@@ -108,6 +110,31 @@ export function createRoomBook({
     room.turnStarted = now();
     arm(room);
     onChange(code);
+  }
+
+  function scheduleResolve(room) {
+    room.holding = true;
+    disarm(room);
+    const code = room.code;
+    timers.set(code, schedule(() => {
+      timers.delete(code);
+      const current = rooms.get(code);
+      if (!current?.game || current.game.phase !== "resolve") return;
+      current.game = settle(current.game);
+      onChange(code);
+      timers.set(code, schedule(() => {
+        timers.delete(code);
+        const next = rooms.get(code);
+        if (!next?.game || next.game.phase !== "gather") return;
+        next.holding = false;
+        next.game = resume(next.game);
+        if (next.game.phase === "play") {
+          next.turnStarted = now();
+          arm(next);
+        }
+        onChange(code);
+      }, ROUND_GAP_MS));
+    }, RESOLVE_MS));
   }
 
   function snapshots(code) {
@@ -265,7 +292,13 @@ export function createRoomBook({
     },
     slapCard(socketId) {
       const result = apply(socketId, slap);
-      if (result.ok) noteDeal(result.room, result.room.game.table.length);
+      if (!result.ok) return result;
+      const room = result.room;
+      if (room.game.phase === "resolve") {
+        if (!room.holding) scheduleResolve(room);
+      } else {
+        disarm(room);
+      }
       return result;
     },
     snapshots,

@@ -29,6 +29,27 @@ function nextView(socket, pred) {
   });
 }
 
+test("the current player deals when five seconds pass", async () => {
+  const running = await start({ port: 0, host: "127.0.0.1" });
+  const alice = await connect(running.port);
+  const bob = await connect(running.port);
+  try {
+    const created = await ack(alice, "room:create", { name: "Alice" });
+    await ack(bob, "room:join", { name: "Bob", code: created.code });
+    const dealt = nextView(alice, (view) => view.phase === "play" && view.pileCount === 1);
+    assert.equal((await ack(alice, "game:start", {})).ok, true);
+    const view = await dealt;
+    assert.equal(view.players[0].count, 25);
+    assert.equal(view.turn, 1);
+    assert.equal(view.top != null, true);
+    assert.ok(view.remainMs <= 3000);
+  } finally {
+    alice.close();
+    bob.close();
+    await running.close();
+  }
+});
+
 test("two sockets share a room, a ping, and one pile", async () => {
   const running = await start({ port: 0, host: "127.0.0.1" });
   const alice = await connect(running.port);
