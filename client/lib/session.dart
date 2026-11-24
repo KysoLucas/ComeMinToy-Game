@@ -159,13 +159,11 @@ class Session extends ChangeNotifier {
   }
 
   void connect() {
-    final socket = io.io(
-      _origin ?? _pageOrigin(),
-      io.OptionBuilder()
-          .setTransports(['websocket'])
-          .disableAutoConnect()
-          .build(),
-    );
+    final options = io.OptionBuilder()
+        .setTransports(['websocket'])
+        .disableAutoConnect();
+    if (!_loopbackPage()) options.setPath('/api/socket');
+    final socket = io.io(_origin ?? _pageOrigin(), options.build());
     _socket = socket;
     socket
       ..onConnect((_) {
@@ -398,6 +396,11 @@ String _pageOrigin() {
   final base = Uri.base;
   if (base.hasScheme && base.host.isNotEmpty) return base.origin;
   return 'http://127.0.0.1:8080';
+}
+
+bool _loopbackPage() {
+  final host = Uri.base.host;
+  return host.isEmpty || host == 'localhost' || host == '127.0.0.1';
 }
 
 Map<String, dynamic> _asMap(dynamic data) {

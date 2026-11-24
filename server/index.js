@@ -153,8 +153,10 @@ export function createGameServer({ webRoot = defaultWebRoot } = {}) {
   });
   const server = createServer((req, res) => serve(req, res, webRoot));
   const io = new Server(server, { transports: ["websocket"] });
-  sockets.push(io);
+  const hosted = new Server(server, { path: "/api/socket", transports: ["websocket"] });
+  sockets.push(io, hosted);
   wire(io, book);
+  wire(hosted, book);
 
   return { server, sockets, book };
 }

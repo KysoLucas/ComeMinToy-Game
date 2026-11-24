@@ -3,8 +3,12 @@ import test from "node:test";
 import { io } from "socket.io-client";
 import { start } from "./index.js";
 
-function connect(port) {
-  const socket = io(`http://127.0.0.1:${port}`, { transports: ["websocket"], forceNew: true });
+function connect(port, path) {
+  const socket = io(`http://127.0.0.1:${port}`, {
+    transports: ["websocket"],
+    forceNew: true,
+    ...(path ? { path } : {}),
+  });
   return new Promise((resolve, reject) => {
     socket.once("connect", () => resolve(socket));
     socket.once("connect_error", reject);
@@ -113,6 +117,26 @@ test("two sockets share a room, a ping, and one pile", async () => {
       assert.equal(after.players[1].count, 27);
       assert.match(after.banner, /Slapped the Wrong Card/);
     }
+  } finally {
+    alice.close();
+    bob.close();
+    await running.close();
+  }
+});
+
+test("the hosted socket path stays open for two players", async () => {
+  const running = await start({ port: 0, host: "127.0.0.1" });
+  const alice = await connect(running.port, "/api/socket");
+  const bob = await connect(running.port, "/api/socket");
+  try {
+    const created = await ack(alice, "room:create", { name: "Alice" });
+    assert.equal(created.ok, true);
+    const joined = nextView(alice, (view) => view.players.length === 2);
+    assert.equal((await ack(bob, "room:join", { name: "Bob", code: created.code })).ok, true);
+    assert.equal((await joined).code, created.code);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(alice.connected, true);
+    assert.equal(bob.connected, true);
   } finally {
     alice.close();
     bob.close();
