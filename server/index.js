@@ -84,7 +84,7 @@ function serve(req, res, webRoot) {
 export function start({ port = 0, host = "0.0.0.0", webRoot = defaultWebRoot } = {}) {
   const book = createRoomBook();
   const server = createServer((req, res) => serve(req, res, webRoot));
-  const io = new Server(server, { cors: { origin: true } });
+  const io = new Server(server);
 
   io.on("connection", (socket) => {
     const finish = (ack, result, okBody) => {

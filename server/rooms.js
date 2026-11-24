@@ -2,6 +2,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import { newGame, play, slap, viewGame } from "./rules.js";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const MAX_ROOMS = 40;
 
 export function cleanName(name) {
   const trimmed = String(name ?? "").replace(/\s+/g, " ").trim().slice(0, 16);
@@ -71,6 +72,7 @@ export function createRoomBook() {
 
   function createRoom(socketId, name) {
     if (sockets.has(socketId)) return { ok: false, error: "Already in a room" };
+    if (rooms.size >= MAX_ROOMS) return { ok: false, error: "Too many rooms" };
     let code = "";
     do {
       code = "";

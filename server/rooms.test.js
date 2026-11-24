@@ -36,6 +36,16 @@ test("the host deals once two players are in the room", () => {
   assert.equal(second.players[1].count, first.players[1].count);
 });
 
+test("the desk stops opening rooms", () => {
+  const book = createRoomBook();
+  let refused = null;
+  for (let i = 0; i < 50 && !refused; i += 1) {
+    const result = book.createRoom(`cap${i}`, "P");
+    if (!result.ok) refused = result.error;
+  }
+  assert.equal(refused, "Too many rooms");
+});
+
 test("a fifth player cannot sit down", () => {
   const book = createRoomBook();
   const host = book.createRoom("s0", "Ada");
