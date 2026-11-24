@@ -46,6 +46,72 @@ test("the desk stops opening rooms", () => {
   assert.equal(refused, "Too many rooms");
 });
 
+test("a blank name cannot open or join a room", () => {
+  const book = createRoomBook({ schedule() {}, clear() {} });
+  assert.equal(book.createRoom("s0", "   ").error, "Need a name");
+  const host = book.createRoom("s0", "Ada");
+  assert.equal(book.joinRoom("s1", { code: host.code, name: " " }).error, "Need a name");
+});
+
+test("the first card deals itself after five seconds, then the next after three", () => {
+  let now = 1_000;
+  const jobs = [];
+  const book = createRoomBook({
+    now: () => now,
+    schedule(fn, ms) {
+      const job = { fn, at: now + ms, dead: false };
+      jobs.push(job);
+      return job;
+    },
+    clear(job) {
+      if (job) job.dead = true;
+    },
+  });
+  const host = book.createRoom("s0", "Ada");
+  book.joinRoom("s1", { code: host.code, name: "Bea" });
+  assert.equal(book.startGame("s0").ok, true);
+  const opened = book.snapshots(host.code)[0].view;
+  assert.equal(opened.remainMs, 5000);
+  now = 6_000;
+  for (const job of jobs) {
+    if (!job.dead && job.at <= now) job.fn();
+  }
+  const dealt = book.snapshots(host.code)[0].view;
+  assert.equal(dealt.pileCount, 1);
+  assert.equal(dealt.turn, 1);
+  assert.equal(dealt.remainMs, 3000);
+});
+
+test("a disconnected seat deals one second after the last card", () => {
+  let now = 5_000;
+  const jobs = [];
+  const book = createRoomBook({
+    now: () => now,
+    schedule(fn, ms) {
+      const job = { fn, at: now + ms, dead: false };
+      jobs.push(job);
+      return job;
+    },
+    clear(job) {
+      if (job) job.dead = true;
+    },
+  });
+  const host = book.createRoom("s0", "Ada");
+  book.joinRoom("s1", { code: host.code, name: "Bea" });
+  book.startGame("s0");
+  book.disconnect("s0");
+  const away = book.snapshots(host.code).find((item) => item.view.you === 1).view;
+  assert.equal(away.players[0].connected, false);
+  assert.equal(away.remainMs, 1000);
+  now = 6_000;
+  for (const job of jobs) {
+    if (!job.dead && job.at <= now) job.fn();
+  }
+  const dealt = book.snapshots(host.code)[0].view;
+  assert.equal(dealt.pileCount, 1);
+  assert.equal(dealt.players[0].count, 25);
+});
+
 test("a fifth player cannot sit down", () => {
   const book = createRoomBook();
   const host = book.createRoom("s0", "Ada");

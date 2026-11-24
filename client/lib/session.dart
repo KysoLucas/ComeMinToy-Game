@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:slapjack/seat_memory.dart';
+import 'package:slapjack/seat_store.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 class CardFace {
@@ -47,6 +49,7 @@ class RoomView {
     required this.said,
     required this.saidBy,
     required this.players,
+    this.remainMs,
   });
 
   final String code;
@@ -62,6 +65,7 @@ class RoomView {
   final String? said;
   final int? saidBy;
   final List<Seat> players;
+  final int? remainMs;
 
   Seat? get mine => you >= 0 && you < players.length ? players[you] : null;
 
@@ -82,6 +86,7 @@ class RoomView {
           : null,
       said: json['said'] as String?,
       saidBy: json['saidBy'] == null ? null : _asInt(json['saidBy'], 0),
+      remainMs: json['remainMs'] == null ? null : _asInt(json['remainMs'], 0),
       players: (json['players'] as List? ?? const [])
           .whereType<Map>()
           .map(
@@ -100,21 +105,45 @@ class RoomView {
 }
 
 class Session extends ChangeNotifier {
-  Session({bool autostart = true, this._origin}) {
+  Session({
+    bool autostart = true,
+    this._origin,
+    SeatMemory? memory,
+    String? invite,
+  }) : memory = memory ?? loadMemory() {
+    name = this.memory.name;
+    final inviteCode = invite ?? readInvite();
+    if (inviteCode != null && inviteCode != this.memory.code) {
+      this.memory.clearSeat();
+      this.memory.persist();
+    }
+    pendingRoom = inviteCode;
     if (autostart) connect();
   }
 
   final String? _origin;
+  final SeatMemory memory;
   io.Socket? _socket;
   Timer? _ping;
   bool _closed = false;
   bool _sawConnect = false;
+  int? _remain;
+  DateTime _remainAt = DateTime.now();
 
   RoomView? view;
   String? error;
+  String? pendingRoom;
   String name = '';
   bool connected = false;
+  bool confirmLeave = false;
   int? rttMs;
+
+  int? get remainMs {
+    final remain = _remain;
+    if (remain == null) return null;
+    final left = remain - DateTime.now().difference(_remainAt).inMilliseconds;
+    return left < 0 ? 0 : left;
+  }
 
   String get pingLabel {
     if (rttMs != null && connected) return '$rttMs ms';
@@ -136,13 +165,20 @@ class Session extends ChangeNotifier {
         if (_closed) return;
         connected = true;
         _sawConnect = true;
-        final id = view?.playerId;
-        final code = view?.code;
-        if (id != null && code != null && code.isNotEmpty) {
+        final savedId = memory.playerId;
+        final savedCode = memory.code;
+        if (savedId != null &&
+            savedCode != null &&
+            (pendingRoom == null || pendingRoom == savedCode)) {
           socket.emitWithAck('room:join', {
-            'playerId': id,
-            'code': code,
+            'playerId': savedId,
+            'code': savedCode,
             'name': name,
+          }, ack: _onAck);
+        } else if (name.isNotEmpty && pendingRoom != null) {
+          socket.emitWithAck('room:join', {
+            'name': name,
+            'code': pendingRoom,
           }, ack: _onAck);
         }
         _armPing();
@@ -157,13 +193,48 @@ class Session extends ChangeNotifier {
       ..connect();
   }
 
+  void submitName(String rawName) {
+    final next = rawName.trim();
+    if (next.isEmpty) {
+      error = 'Enter your name';
+      notifyListeners();
+      return;
+    }
+    name = next;
+    memory.name = next;
+    memory.persist();
+    error = null;
+    final code = pendingRoom;
+    if (code != null) {
+      joinRoom(name, code);
+      return;
+    }
+    notifyListeners();
+  }
+
   void createRoom(String rawName) {
-    name = rawName.trim();
+    final next = rawName.trim();
+    if (next.isEmpty) {
+      error = 'Enter your name';
+      notifyListeners();
+      return;
+    }
+    name = next;
+    memory.name = next;
+    memory.persist();
     _emit('room:create', {'name': name});
   }
 
   void joinRoom(String rawName, String rawCode) {
-    name = rawName.trim();
+    final next = rawName.trim();
+    if (next.isEmpty) {
+      error = 'Enter your name';
+      notifyListeners();
+      return;
+    }
+    name = next;
+    memory.name = next;
+    memory.persist();
     _emit('room:join', {'name': name, 'code': rawCode.trim()});
   }
 
@@ -173,10 +244,24 @@ class Session extends ChangeNotifier {
 
   void slap() => _emit('game:slap', const {});
 
+  void askLeave() {
+    confirmLeave = true;
+    notifyListeners();
+  }
+
+  void cancelLeave() {
+    confirmLeave = false;
+    notifyListeners();
+  }
+
   void leave() {
     _socket?.emitWithAck('room:leave', const {}, ack: (_) {});
     view = null;
     error = null;
+    confirmLeave = false;
+    pendingRoom = null;
+    memory.clearSeat();
+    memory.persist();
     notifyListeners();
   }
 
@@ -214,6 +299,14 @@ class Session extends ChangeNotifier {
     final next = RoomView.fromJson(_asMap(data));
     view = next;
     error = null;
+    if (next.playerId != null && next.code.isNotEmpty) {
+      memory.code = next.code;
+      memory.playerId = next.playerId;
+      memory.persist();
+      pendingRoom = null;
+    }
+    _remain = next.remainMs;
+    _remainAt = DateTime.now();
     notifyListeners();
   }
 
@@ -237,6 +330,13 @@ class Session extends ChangeNotifier {
       },
     );
   }
+}
+
+String? readInvite() {
+  final raw = Uri.base.queryParameters['room'];
+  if (raw == null || raw.isEmpty) return null;
+  final code = raw.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  return code.length == 4 ? code : null;
 }
 
 String _pageOrigin() {

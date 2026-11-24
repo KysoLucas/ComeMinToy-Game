@@ -60,7 +60,13 @@ function serve(req, res, webRoot) {
     res.end("Flutter web build is missing. Run npm run build:web.\n");
     return;
   }
-  const urlPath = decodeURIComponent((req.url ?? "/").split("?")[0]);
+  let urlPath = "/";
+  try {
+    urlPath = decodeURIComponent((req.url ?? "/").split("?")[0]);
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
   const relative = path.normalize(urlPath).replace(/^[/\\]+/, "");
   let full = path.resolve(webRoot, relative);
   const root = path.resolve(webRoot);
@@ -82,7 +88,11 @@ function serve(req, res, webRoot) {
 }
 
 export function start({ port = 0, host = "0.0.0.0", webRoot = defaultWebRoot } = {}) {
-  const book = createRoomBook();
+  const book = createRoomBook({
+    onChange(code) {
+      push(io, book, code);
+    },
+  });
   const server = createServer((req, res) => serve(req, res, webRoot));
   const io = new Server(server);
 

@@ -25,9 +25,11 @@ try {
   const alice = await open(browser, running.port);
   const bob = await open(browser, running.port);
   await fill(alice, "Your name", "Alice");
+  await click(alice, "Continue");
   await click(alice, "Create room");
   const code = await roomCode(alice);
   await fill(bob, "Your name", "Bob");
+  await click(bob, "Continue");
   await fill(bob, "Room code", code);
   await click(bob, "Join room");
   await waitFor(alice, "Bob");
@@ -89,7 +91,7 @@ async function open(browser, port) {
   await page.waitForSelector("flutter-view, flt-glass-pane", { timeout: 60000 });
   const placeholder = await page.$("flt-semantics-placeholder");
   if (placeholder) await placeholder.click();
-  await waitFor(page, "Create room");
+  await waitFor(page, "Your name");
   page._errors = errors;
   return page;
 }

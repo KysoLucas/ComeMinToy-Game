@@ -40,59 +40,92 @@ class GameScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: ListenableBuilder(
-          listenable: session,
-          builder: (context, _) {
-            final view = session.view;
-            final page = view == null
-                ? HomeForm(session: session)
-                : view.phase == 'lobby'
-                ? WaitingRoom(session: session)
-                : TablePage(session: session);
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-                  child: Row(
-                    children: [
-                      Text(
-                        session.pingLabel,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (view != null)
-                        Text(
-                          'Room ${view.code}',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      if (view != null)
-                        TextButton(
-                          onPressed: session.leave,
-                          child: const Text('Leave'),
-                        ),
-                    ],
-                  ),
-                ),
-                if (session.error != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                    child: Text(
-                      session.error!,
-                      style: const TextStyle(
-                        color: Color(0xFFFFB4A8),
-                        fontWeight: FontWeight.w700,
+      body: Stack(
+        children: [
+          SafeArea(
+            child: ListenableBuilder(
+              listenable: session,
+              builder: (context, _) {
+                final view = session.view;
+                final page = view == null
+                    ? HomeForm(session: session)
+                    : view.phase == 'lobby'
+                    ? WaitingRoom(session: session)
+                    : TablePage(session: session);
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+                      child: Row(
+                        children: [
+                          Text(
+                            session.pingLabel,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (view != null)
+                            Text(
+                              'Room ${view.code}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          if (view != null)
+                            TextButton(
+                              onPressed: session.askLeave,
+                              child: const Text('Leave'),
+                            ),
+                        ],
                       ),
                     ),
-                  ),
-                Expanded(child: page),
-              ],
-            );
-          },
-        ),
+                    if (session.error != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        child: Text(
+                          session.error!,
+                          style: const TextStyle(
+                            color: Color(0xFFFFB4A8),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    Expanded(child: page),
+                  ],
+                );
+              },
+            ),
+          ),
+          if (session.confirmLeave)
+            ColoredBox(
+              color: const Color(0xCC000000),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Leave this room?',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: session.leave,
+                      child: const Text('Sure'),
+                    ),
+                    TextButton(
+                      onPressed: session.cancelLeave,
+                      child: const Text('Stay'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

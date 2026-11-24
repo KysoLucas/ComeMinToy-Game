@@ -11,6 +11,11 @@ void main() {
     await tester.pumpWidget(SlapjackApp(session: session));
 
     expect(find.text('Hong Kong Slapjack'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Create room'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'Alice');
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
     expect(find.text('Create room'), findsOneWidget);
     expect(find.text('Join room'), findsOneWidget);
     expect(find.text('Connecting'), findsOneWidget);

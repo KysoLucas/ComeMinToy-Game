@@ -43,40 +43,48 @@ class CoveredFan extends StatelessWidget {
     required this.count,
     required this.onPlay,
     required this.canPlay,
+    this.active = false,
+    this.size = 96,
+    this.label,
   });
 
   final int count;
   final VoidCallback onPlay;
   final bool canPlay;
+  final bool active;
+  final double size;
+  final String? label;
 
   static const _countStyle = TextStyle(
     color: Color(0xFFF7F1E3),
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: FontWeight.w800,
   );
 
   @override
   Widget build(BuildContext context) {
-    final shown = count == 0 ? 0 : math.min(count, 6);
+    final shown = count == 0 ? 0 : math.min(count, 5);
+    final cardW = size * 0.5;
+    final cardH = size * 0.68;
     return Semantics(
       button: true,
       enabled: canPlay,
-      label: canPlay ? 'Play $count' : 'Your cards $count',
+      label: label ?? (canPlay ? 'Play $count' : 'Your cards $count'),
       onTap: canPlay ? onPlay : null,
       container: true,
       child: GestureDetector(
         onTap: canPlay ? onPlay : null,
         child: ExcludeSemantics(
           child: SizedBox(
-            height: 112,
-            width: double.infinity,
+            height: size,
+            width: size,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: canPlay
+                  color: active
                       ? const Color(0xFFF0C14A)
-                      : const Color(0x00000000),
+                      : const Color(0xFF8FB4E0),
                   width: 3,
                 ),
               ),
@@ -87,8 +95,11 @@ class CoveredFan extends StatelessWidget {
                       children: [
                         for (var i = 0; i < shown; i++)
                           Transform.translate(
-                            offset: Offset((i - (shown - 1) / 2) * 6, 0),
-                            child: const CardBack(width: 62, height: 88),
+                            offset: Offset(
+                              (i - (shown - 1) / 2) * (size * 0.06),
+                              0,
+                            ),
+                            child: CardBack(width: cardW, height: cardH),
                           ),
                         DecoratedBox(
                           decoration: BoxDecoration(

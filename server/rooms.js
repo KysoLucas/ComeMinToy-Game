@@ -5,8 +5,7 @@ const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_ROOMS = 40;
 
 export function cleanName(name) {
-  const trimmed = String(name ?? "").replace(/\s+/g, " ").trim().slice(0, 16);
-  return trimmed.length ? trimmed : "Player";
+  return String(name ?? "").replace(/\s+/g, " ").trim().slice(0, 16);
 }
 
 export function formatBanner(players, game) {
@@ -21,9 +20,19 @@ export function formatBanner(players, game) {
   return null;
 }
 
-export function createRoomBook() {
+const FIRST_TURN_MS = 5000;
+const LATER_TURN_MS = 3000;
+const AWAY_TURN_MS = 1000;
+
+export function createRoomBook({
+  now = () => Date.now(),
+  schedule = defaultSchedule,
+  clear = defaultClear,
+  onChange = () => {},
+} = {}) {
   const rooms = new Map();
   const sockets = new Map();
+  const timers = new Map();
 
   function locate(socketId) {
     const loc = sockets.get(socketId);
@@ -59,7 +68,46 @@ export function createRoomBook() {
         count: seen ? seen.counts[seat] ?? 0 : 0,
         slapped: seen ? Boolean(seen.slaps[seat]) : false,
       })),
+      remainMs: room.deadline == null ? null : Math.max(0, room.deadline - now()),
     };
+  }
+
+  function disarm(room) {
+    const pending = timers.get(room.code);
+    if (pending) clear(pending);
+    timers.delete(room.code);
+    room.deadline = null;
+  }
+
+  function arm(room) {
+    disarm(room);
+    const game = room.game;
+    if (!game || game.phase !== "play") return;
+    const player = room.players[game.turn];
+    const away = !player?.connected;
+    const budget = away ? AWAY_TURN_MS : room.cardsPlayed === 0 ? FIRST_TURN_MS : LATER_TURN_MS;
+    const started = away ? room.lastDealAt : room.turnStarted;
+    const wait = Math.max(0, started + budget - now());
+    room.deadline = now() + wait;
+    timers.set(room.code, schedule(() => {
+      timers.delete(room.code);
+      autoDeal(room.code);
+    }, wait));
+  }
+
+  function autoDeal(code) {
+    const room = rooms.get(code);
+    const game = room?.game;
+    if (!game || game.phase !== "play") return;
+    if (room.deadline != null && now() + 25 < room.deadline) return;
+    const result = play(game, game.turn);
+    if (result.error) return;
+    room.game = result.state;
+    room.cardsPlayed += 1;
+    room.lastDealAt = now();
+    room.turnStarted = now();
+    arm(room);
+    onChange(code);
   }
 
   function snapshots(code) {
@@ -78,13 +126,24 @@ export function createRoomBook() {
       code = "";
       for (let i = 0; i < 4; i += 1) code += ALPHABET[randomInt(ALPHABET.length)];
     } while (rooms.has(code));
+    const trimmed = cleanName(name);
+    if (!trimmed) return { ok: false, error: "Need a name" };
     const player = {
       id: randomBytes(9).toString("base64url"),
-      name: cleanName(name),
+      name: trimmed,
       socketId,
       connected: true,
     };
-    rooms.set(code, { code, hostId: player.id, players: [player], game: null });
+    rooms.set(code, {
+      code,
+      hostId: player.id,
+      players: [player],
+      game: null,
+      cardsPlayed: 0,
+      lastDealAt: 0,
+      turnStarted: 0,
+      deadline: null,
+    });
     sockets.set(socketId, { code, playerId: player.id });
     return { ok: true, code, playerId: player.id };
   }
@@ -103,15 +162,18 @@ export function createRoomBook() {
       returning.connected = true;
       returning.socketId = socketId;
       sockets.set(socketId, { code, playerId: returning.id });
+      if (room.game?.phase === "play") arm(room);
       return { ok: true, code, playerId: returning.id };
     }
     if (room.game && room.game.phase !== "won") {
       return { ok: false, error: "Game already started" };
     }
     if (room.players.length >= 4) return { ok: false, error: "Room is full" };
+    const trimmed = cleanName(payload?.name);
+    if (!trimmed) return { ok: false, error: "Need a name" };
     const player = {
       id: randomBytes(9).toString("base64url"),
-      name: cleanName(payload?.name),
+      name: trimmed,
       socketId,
       connected: true,
     };
@@ -128,7 +190,9 @@ export function createRoomBook() {
     sockets.delete(socketId);
     player.connected = false;
     player.socketId = null;
+    if (room.game?.phase === "play") arm(room);
     if (!room.game || room.game.phase === "won") {
+      disarm(room);
       room.players = room.players.filter((item) => item.connected);
       if (room.players.length === 0) {
         rooms.delete(room.code);
@@ -148,7 +212,16 @@ export function createRoomBook() {
     const result = move(found.room.game, found.seat);
     if (result.error) return { ok: false, error: result.error };
     found.room.game = result.state;
-    return { ok: true, code: found.room.code };
+    return { ok: true, code: found.room.code, room: found.room };
+  }
+
+  function noteDeal(room, before) {
+    if (room.game.table.length > before) {
+      room.cardsPlayed += 1;
+      room.lastDealAt = now();
+    }
+    room.turnStarted = now();
+    arm(room);
   }
 
   function startGame(socketId) {
@@ -168,7 +241,12 @@ export function createRoomBook() {
       return { ok: false, error: "Not in a room" };
     }
     if (room.players.length < 2) return { ok: false, error: "Need two players" };
+    room.players = room.players.filter((player) => player.connected);
     room.game = newGame(room.players.length);
+    room.cardsPlayed = 0;
+    room.lastDealAt = now();
+    room.turnStarted = now();
+    arm(room);
     return { ok: true, code: room.code };
   }
 
@@ -178,8 +256,28 @@ export function createRoomBook() {
     leave: disconnect,
     disconnect,
     startGame,
-    playCard: (socketId) => apply(socketId, play),
-    slapCard: (socketId) => apply(socketId, slap),
+    playCard(socketId) {
+      const found = locate(socketId);
+      const before = found.ok ? found.room.game?.table.length ?? 0 : 0;
+      const result = apply(socketId, play);
+      if (result.ok) noteDeal(result.room, before);
+      return result;
+    },
+    slapCard(socketId) {
+      const result = apply(socketId, slap);
+      if (result.ok) noteDeal(result.room, result.room.game.table.length);
+      return result;
+    },
     snapshots,
   };
+}
+
+function defaultSchedule(fn, ms) {
+  const id = setTimeout(fn, ms);
+  if (typeof id.unref === "function") id.unref();
+  return id;
+}
+
+function defaultClear(id) {
+  clearTimeout(id);
 }
